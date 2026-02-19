@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: human-rating-platform
+    rootDir: backend
+    buildCommand: |
+      cd ../frontend && npm install && npm run build && cp -r dist ../backend/static && cd ../backend && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
