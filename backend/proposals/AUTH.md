@@ -17,6 +17,7 @@ This document defines the staged approach to authentication and access control f
 - Add **Sign in with Google** for admin authentication
 - After sign-in, backend checks whether the user’s email is in an **invite-only allowlist**
 - If not allowlisted → deny access (403) to `/admin` UI and `/api/admin/*`
+- If allowlisted → backend creates an application session
 - All allowlisted admins can access all experiments
 
 **Alternatives considered**
@@ -35,6 +36,9 @@ This document defines the staged approach to authentication and access control f
 ---
 
 ## v2 – Owner + Collaborator Model
+- Anyone who signs in with Google is an admin and can create their own experiment
+- To access other experiments, backend authorizes access based on experiment-level rules
+
 ### Experiment Access Rules
 - Owner can:
   - View/edit/export/delete
