@@ -17,7 +17,7 @@ This document defines the staged approach to authentication and access control f
 - Add **Sign in with Google** for admin authentication
 - After sign-in, backend checks whether the user’s email is in an **invite-only allowlist**
 - If not allowlisted → deny access (403) to `/admin` UI and `/api/admin/*`
-- If allowlisted → backend creates an application session
+- If allowlisted → backend creates an application session ([HTTPOnly](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies) should suffice)
 - All allowlisted admins can access all experiments
 
 **Alternatives considered**
