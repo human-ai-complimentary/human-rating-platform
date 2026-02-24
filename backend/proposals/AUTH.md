@@ -12,31 +12,35 @@ This document defines the staged approach to authentication and access control f
 
 ---
 
-### v1 – Google Sign-In + Invite-Only Allowlist
+### v1 – Firebase Auth (Email/Password + Google) + Invite-Only Allowlist
 
-- Add **Sign in with Google** for admin authentication
-- After sign-in, backend checks whether the user’s email is in an **invite-only allowlist**
+- Use **Firebase Authentication** for admin authentication (supports both email/password and Google sign-in)
+- Admins can:
+  - Sign up / sign in with **email + password**
+  - Or sign in with **Google**
+- After Firebase auth, backend checks whether the user’s email is in an **invite-only allowlist**
 - If not allowlisted → deny access (403) to `/admin` UI and `/api/admin/*`
 - If allowlisted → backend creates an application session ([HTTPOnly](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies) should suffice)
 - All allowlisted admins can access all experiments
 
 **Alternatives considered**
 - **Sign in with Prolific:** Not viable — Prolific does not provide an OAuth-style “Sign in with Prolific” API for admin authentication
-- **Username/password:** Avoided due to added complexity (password storage, reset flow, lockouts, security hardening)
-- **Managed auth (e.g., Firebase):** Possible, but introduces additional cost
+- **Homegrown username/password (no managed provider):** Avoided due to added complexity (password storage, reset flow, lockouts, security hardening)
 
 **Why this approach**
-- Minimal implementation complexity
-- No password storage
+- Minimal implementation complexity (Firebase SDK + backend token verification)
+- No custom password storage or reset flows
 - Clear identity + audit trail for admin actions
 - Works well for a small invite-only team without a shared Workspace domain
+- Supports both Google and email/password for admins
+- Firebase Auth is free up to roughly **50k users**, so cost is not a concern at our expected scale
 
 **Goal:** Prevent public access to experiment data and exports
 
 ---
 
 ## v2 – Owner + Collaborator Model
-- Anyone who signs in with Google is an admin and can create their own experiment
+- Anyone who authenticates via Firebase (email/password or Google) is an admin and can create their own experiment
 - To access other experiments, backend authorizes access based on experiment-level rules
 
 ### Experiment Access Rules
@@ -56,6 +60,19 @@ This document defines the staged approach to authentication and access control f
 **Goal:** Scoped experiment-level access control
 
 **Q - Does it make more sense to control access per experiment (as above) or per team?**
+
+---
+
+## Other considerations
+
+- **Why not only “Sign in with Google”?**
+  - Not everyone will want (or be able) to sign in with Google
+  - Email/password via Firebase lets us onboard anyone with an email address while still offering Google as a one-click option.
+
+- **Why Firebase Auth specifically?**
+  - Provides Google sign-in, email/password auth, email verification, and password reset flows out of the box.
+  - We don’t have to build or maintain password + email infrastructure (secure storage, reset tokens, lockouts, etc.) ourselves
+  - Firebase Auth is free up to around **50k users**, so cost should not be an issue at our scale
 
 ---
 
