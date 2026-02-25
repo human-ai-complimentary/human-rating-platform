@@ -1,3 +1,5 @@
+# Legacy manifest: not actively maintained in this Docker-first workflow.
+# Prefer `docker compose` + `Makefile` commands for local and CI-style execution.
 services:
   - type: web
     name: human-rating-platform

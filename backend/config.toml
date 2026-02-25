@@ -1,0 +1,23 @@
+[app]
+env = "development"
+cors_origins = ["http://localhost:5173", "http://localhost:8000"]
+
+[database]
+url = "postgresql://postgres:postgres@localhost:5432/human_rating_platform"
+
+[migrations]
+script_location = "backend/alembic"
+version_locations = "backend/alembic/versions"
+
+[exports]
+stream_batch_size = 1000
+
+[testing]
+export_seed_row_count = 1500
+
+[seeding]
+enabled = false
+experiment_name = "Seed - Local Baseline"
+question_count = 50
+num_ratings_per_question = 3
+prolific_completion_url = ""

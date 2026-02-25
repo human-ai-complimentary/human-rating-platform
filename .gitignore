@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 .env
+backend/.env
+frontend/.env
 .venv
 venv/
 
@@ -20,3 +22,6 @@ frontend/dist/
 
 # Data
 data/
+
+# Local assistant/worktree artifacts
+.claude/

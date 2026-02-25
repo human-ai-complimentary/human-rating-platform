@@ -1,7 +1,15 @@
 import type { Experiment, ExperimentCreate, ExperimentStats, Question, Session, RatingSubmit, Analytics, Upload } from './types';
 
-// Use environment variable for API URL, fallback to relative path for same-origin deployment
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+function resolveApiBase(): string {
+  const host = (import.meta.env.VITE_API_HOST || '').trim().replace(/\/+$/, '');
+  const rawPrefix = (import.meta.env.VITE_API_PREFIX ?? '').trim();
+  const cleanedPrefix = rawPrefix.replace(/^\/+|\/+$/g, '');
+  const prefix = cleanedPrefix ? `/${cleanedPrefix}` : '';
+
+  return `${host}${prefix}`;
+}
+
+const API_BASE = resolveApiBase();
 
 export const api = {
   // Admin endpoints

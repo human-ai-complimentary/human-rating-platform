@@ -2,72 +2,158 @@
 
 A web platform for collecting human ratings on LLM responses, designed for use with Prolific.
 
-## Features
+## Support Scope
 
-- **Admin Panel**: Create experiments, upload questions via CSV, view analytics, export ratings
-- **Rater Interface**: Clean UI for rating questions with confidence scores and session timer
-- **Prolific Integration**: Automatic capture of Prolific IDs and redirect on completion
-- **Analytics**: Per-question and per-rater statistics with response time tracking
+- Supported runtime target: Docker Compose.
+- Legacy manifests (`render.yaml`, `backend/Procfile`, `backend/railway.json`) are not maintained in this pass.
 
-## Tech Stack
+## Stack
 
-- **Backend**: Python FastAPI + SQLAlchemy
-- **Frontend**: React + TypeScript + Vite
-- **Database**: SQLite (local) or PostgreSQL/MySQL (production)
+- Backend: FastAPI + SQLModel (async)
+- Migrations: Alembic
+- Config: Pydantic Settings (`backend/config.toml` + `backend/.env` + process env)
+- Frontend: React + TypeScript + Vite
+- Database: PostgreSQL
 
-## Local Development
+## Configuration Model
+
+Backend config is accessed only through `backend/config.py` (`get_settings()`), with this precedence:
+
+1. Python init kwargs
+2. Process environment variables
+3. `backend/.env`
+4. `backend/config.toml`
+5. Python defaults
+
+Frontend config uses `frontend/.env`:
+
+- `VITE_API_HOST` (optional, example `https://your-host.ts.net`; empty = same-origin)
+- `VITE_API_PREFIX` (optional; default empty)
+
+Default local/dev happy path:
+
+- `VITE_API_HOST=`
+- `VITE_API_PREFIX=`
+
+Optional ingress mode (for setups that expose API under `/api`):
+
+- `VITE_API_HOST=`
+- `VITE_API_PREFIX=/api`
+
+Tailscale local exposure tip:
+
+- Yes, Funnel can route by path when configured via Serve/Funnel handlers (for example `/ -> :5173` and `/api -> :8000`).
+- Why this setup is useful:
+  - public HTTPS endpoint on your `.ts.net` domain
+  - frontend + API on the same origin (`/` + `/api`)
+  - avoids mixed-content errors
+  - reduces CORS complexity for local internet exposure
+  - gives you a clean HTTPS URL to paste into Prolific
+- In that setup, keep `VITE_API_HOST=` and `VITE_API_PREFIX=/api`.
+- Verify active handlers with `tailscale funnel status --json`.
+- If you expose backend directly (`tailscale funnel 8000` with no `/api` handler), set `VITE_API_HOST=https://<your-host>.ts.net` and `VITE_API_PREFIX=`.
+
+Example handler setup:
+
+```bash
+tailscale funnel --bg --set-path / http://127.0.0.1:5173
+tailscale funnel --bg --set-path /api http://127.0.0.1:8000
+tailscale funnel status --json
+```
+
+`backend/config.toml` is the base local config. Main sections:
+
+- `[exports]` controls CSV export chunking via `stream_batch_size` (memory/throughput tradeoff).
+- `[testing]` controls characterization export dataset volume via `export_seed_row_count`.
+- `[seeding]` controls optional local seed generation for `make db.seed` (`enabled`, `experiment_name`, `question_count`, `num_ratings_per_question`, `prolific_completion_url`).
+
+## Local Setup
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - Node.js 18+
+- Docker + Docker Compose
 
-### Setup
+### One-time setup
 
-1. **Set up the backend**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-2. **Set up the frontend**
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-### Running Locally
-
-Start both servers separately:
-
-**Backend**:
 ```bash
-cd backend
-python -m uvicorn main:app --reload --port 8000
+make env.sync
 ```
 
-**Frontend**:
+This creates:
+
+- `backend/.env` from `backend/.env.example`
+- `frontend/.env` from `frontend/.env.example`
+
+### Core workflow
+
+```bash
+make up          # start db + alembic migration + api (hot reload)
+make ps          # show running services
+make logs        # stream db/api logs
+make test        # run characterization tests with real db+migrations
+make db.seed     # seed local dataset from backend/config.toml (disabled by default)
+make down        # stop services
+make db.clear    # wipe local DB volume (destructive)
+make db.reset    # wipe + rebuild from migrations
+make db.migrate  # run alembic upgrade head
+```
+
+Create a new migration:
+
+```bash
+make db.migrate.new MIGRATION_NAME=add_new_column
+```
+
+Makefile targets are intentionally backend-focused. Frontend dev runs separately.
+
+Run frontend in a second terminal:
+
 ```bash
 cd frontend
-npm run dev
+make up
 ```
 
-Access the app at the provided front end URL
+## CI Lint
+
+Local commands that mirror `main.yml`:
+
+```bash
+ruff check backend
+ruff format --check backend
+npm --prefix frontend run lint
+npm --prefix frontend run typecheck
+yamllint .
+```
+
+## Alembic Commands
+
+The project uses a wrapper command instead of `alembic.ini`:
+
+```bash
+cd backend
+python scripts/migrate.py upgrade head
+python scripts/migrate.py current
+python scripts/migrate.py revision --autogenerate -m "my_change"
+python scripts/migrate.py stamp head
+```
 
 ## CSV Format
 
-Upload questions using a CSV file with the following columns:
+Upload questions with these columns:
 
 | Column | Required | Description |
-|--------|----------|-------------|
+| --- | --- | --- |
 | `question_id` | Yes | Unique identifier for the question |
-| `question_text` | Yes | The question text to display |
-| `gt_answer` | No | Ground truth answer (for export/analysis) |
-| `options` | No | Comma-separated options for multiple choice |
-| `question_type` | No | `MC` (multiple choice) or `FT` (free text). Default: `MC` |
+| `question_text` | Yes | Question text shown to raters |
+| `gt_answer` | No | Ground-truth answer |
+| `options` | No | Comma-separated options for MC |
+| `question_type` | No | `MC` or `FT` (default `MC`) |
 | `metadata` | No | JSON string with additional data |
 
 Example:
+
 ```csv
 question_id,question_text,gt_answer,options,question_type
 q1,"Is the sky blue?","Yes","Yes,No,Maybe",MC
@@ -76,97 +162,36 @@ q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 
 ## Prolific Integration
 
-1. Create your experiment in the admin panel
-2. Copy the **Study URL** from the experiment settings
-3. In Prolific, paste this URL as your study URL
-4. Set the **Completion URL** in your experiment settings (get this from Prolific)
+1. Create an experiment in admin.
+2. Copy the study URL.
+3. Paste it into Prolific as external study URL.
+4. Set completion URL in experiment settings.
 
-The Study URL format:
-```
+Study URL format:
+
+```text
 https://your-app.com/rate?experiment_id=1&PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}
 ```
-
-## Deployment to Render
-
-This app deploys as two separate services on Render:
-
-### 1. Backend (Web Service)
-
-1. Create a new **Web Service** on Render
-2. Connect your GitHub repository
-3. Configure:
-   - **Name**: `human-rating-platform-api`
-   - **Root Directory**: `backend`
-   - **Runtime**: Python
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-
-4. Add environment variables:
-   | Variable | Description |
-   |----------|-------------|
-   | `DATABASE_URL` | Database connection string (optional, defaults to SQLite) |
-   | `CORS_ORIGINS` | Frontend URL, e.g., `https://your-frontend.onrender.com` |
-
-5. If using SQLite, add a **Disk** for persistent storage:
-   - Mount path: `/data`
-
-### 2. Frontend (Static Site)
-
-1. Create a new **Static Site** on Render
-2. Connect the same GitHub repository
-3. Configure:
-   - **Name**: `human-rating-platform`
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm install && npm run build`
-   - **Publish Directory**: `dist`
-
-4. Add environment variable:
-   | Variable | Description |
-   |----------|-------------|
-   | `VITE_API_URL` | Backend URL, e.g., `https://human-rating-platform-api.onrender.com` |
-
-5. Add a **Rewrite Rule** for SPA routing:
-   - **Source**: `/*`
-   - **Destination**: `/index.html`
-   - **Action**: Rewrite
-
-### 3. Update CORS
-
-After both services are deployed, update the backend's `CORS_ORIGINS` environment variable with your frontend URL.
-
-## Environment Variables
-
-### Backend
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | SQLite in `/data` | Database connection string |
-| `CORS_ORIGINS` | `*` | Allowed origins (comma-separated) |
-
-### Frontend
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | (empty) | Backend API URL |
 
 ## API Endpoints
 
 ### Admin
 
-- `POST /api/admin/experiments` - Create experiment
-- `GET /api/admin/experiments` - List experiments
-- `POST /api/admin/experiments/{id}/upload` - Upload questions CSV
-- `GET /api/admin/experiments/{id}/stats` - Get experiment stats
-- `GET /api/admin/experiments/{id}/analytics` - Get detailed analytics
-- `GET /api/admin/experiments/{id}/export` - Export ratings as CSV
-- `DELETE /api/admin/experiments/{id}` - Delete experiment
+- `POST /admin/experiments`
+- `GET /admin/experiments`
+- `POST /admin/experiments/{id}/upload`
+- `GET /admin/experiments/{id}/stats`
+- `GET /admin/experiments/{id}/analytics`
+- `GET /admin/experiments/{id}/export`
+- `DELETE /admin/experiments/{id}`
 
 ### Rater
 
-- `POST /api/raters/start` - Start rating session
-- `GET /api/raters/next-question` - Get next question
-- `POST /api/raters/submit` - Submit rating
-- `GET /api/raters/session-status` - Check session status
+- `POST /raters/start`
+- `GET /raters/next-question`
+- `POST /raters/submit`
+- `GET /raters/session-status`
+- `POST /raters/end-session`
 
 ## License
 

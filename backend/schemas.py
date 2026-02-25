@@ -1,6 +1,7 @@
-from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
 # Experiment schemas
@@ -19,8 +20,7 @@ class ExperimentResponse(BaseModel):
     question_count: int = 0
     rating_count: int = 0
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Question schemas
@@ -31,8 +31,7 @@ class QuestionResponse(BaseModel):
     options: Optional[str] = None
     question_type: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Rater schemas
