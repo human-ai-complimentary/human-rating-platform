@@ -19,21 +19,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-
-      - name: Install backend lint tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff==0.15.2
+          version: "0.9.28"
+          enable-cache: true
 
       - name: Ruff check
-        run: ruff check backend
+        run: uvx ruff==0.15.2 check backend
 
       - name: Ruff format check
-        run: ruff format --check backend
+        run: uvx ruff==0.15.2 format --check backend
 
   lint-frontend:
     name: Lint Frontend (eslint + tsc)
@@ -65,18 +61,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-
-      - name: Install YAML lint tools
-        run: |
-          python -m pip install --upgrade pip
-          pip install yamllint==1.38.0
+          version: "0.9.28"
+          enable-cache: true
 
       - name: Yamllint
-        run: yamllint .
+        run: uvx yamllint==1.38.0 .
 
   test-characterization:
     name: Characterization Tests (docker compose)
@@ -92,6 +84,33 @@ jobs:
           docker compose version
 
       - name: Run characterization tests
+        id: characterization
+        continue-on-error: true
         env:
           NO_COLOR: "1"
-        run: make test
+          KEEP_TEST_STACK: "1"
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          make test 2>&1 | tee artifacts/characterization-output.txt
+
+      - name: Capture docker compose logs on failure
+        if: steps.characterization.outcome == 'failure'
+        run: |
+          docker compose --profile test ps -a > artifacts/compose-ps.txt || true
+          docker compose --profile test logs --no-color db migrate e2e > artifacts/compose-logs.txt || true
+
+      - name: Upload characterization artifacts on failure
+        if: steps.characterization.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: characterization-failure-artifacts
+          path: artifacts/
+
+      - name: Tear down test stack
+        if: always()
+        run: docker compose --profile test down --remove-orphans || true
+
+      - name: Fail if characterization tests failed
+        if: steps.characterization.outcome == 'failure'
+        run: exit 1

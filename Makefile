@@ -5,6 +5,7 @@ SHELL := /bin/sh
 COMPOSE ?= docker compose
 TEST_PROFILE ?= test
 TEST_SERVICE ?= e2e
+KEEP_TEST_STACK ?= 0
 MIGRATION_NAME ?= schema_update
 ENV_SYNC_TARGETS := up down ps logs db.clear db.reset db.migrate db.migrate.new db.seed test
 
@@ -132,7 +133,7 @@ db.migrate.new: ## Autogenerate Alembic migration (set MIGRATION_NAME=...)
 	$(call _title,==> Creating Alembic migration $(MIGRATION_NAME))
 	@$(COMPOSE) up -d db > /dev/null
 	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
-	@$(COMPOSE) run --rm --no-deps migrate sh -c "python scripts/migrate.py revision --autogenerate -m '$(MIGRATION_NAME)'"
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/migrate.py revision --autogenerate -m '$(MIGRATION_NAME)'"
 	$(call _ok,Migration created)
 
 db.seed: ## Seed local dataset from backend/config.toml
@@ -140,19 +141,26 @@ db.seed: ## Seed local dataset from backend/config.toml
 	@$(COMPOSE) up -d db > /dev/null
 	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
 	@$(COMPOSE) run --rm --no-deps migrate
-	@$(COMPOSE) run --rm --no-deps migrate sh -c "pip install --quiet --disable-pip-version-check -r requirements.txt && python scripts/seed_dev.py"
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/seed_dev.py"
 	$(call _ok,Seed command finished)
 
 test: ## Run characterization tests with DB+migrations as dependencies
 	$(call _title,==> Running characterization tests)
 	$(call _info,Using docker compose profile: $(TEST_PROFILE))
-	$(call _info,Preparing db + alembic migrations)
+	$(call _info,Preparing db)
 	@set +e; \
-	$(COMPOSE) --profile $(TEST_PROFILE) up -d db migrate > /dev/null; \
+	$(COMPOSE) --profile $(TEST_PROFILE) up -d db > /dev/null; \
+	until $(COMPOSE) --profile $(TEST_PROFILE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done; \
+	printf "$(C_INFO)::$(C_RESET) Applying migrations synchronously\n"; \
+	$(COMPOSE) --profile $(TEST_PROFILE) run --rm --no-deps migrate > /dev/null; \
 	printf "$(C_INFO)::$(C_RESET) Executing test service: $(TEST_SERVICE)\n"; \
-	$(COMPOSE) --profile $(TEST_PROFILE) run --rm $(TEST_SERVICE); \
+	$(COMPOSE) --profile $(TEST_PROFILE) run --rm --no-deps $(TEST_SERVICE); \
 	exit_code=$$?; \
-	$(COMPOSE) --profile $(TEST_PROFILE) down --remove-orphans > /dev/null; \
+	if [ "$(KEEP_TEST_STACK)" != "1" ]; then \
+		$(COMPOSE) --profile $(TEST_PROFILE) down --remove-orphans > /dev/null; \
+	else \
+		printf "$(C_WARN)!!$(C_RESET) Keeping compose test stack up (KEEP_TEST_STACK=1)\n"; \
+	fi; \
 	if [ $$exit_code -eq 0 ]; then \
 		printf "$(C_OK)++$(C_RESET) Characterization tests passed\n"; \
 	else \

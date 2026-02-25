@@ -308,8 +308,9 @@ def test_submit_rating_rejects_invalid_confidence(client: TestClient):
         },
     )
 
-    assert response.status_code == 400
-    assert "Confidence must be between 1 and 5" in response.json()["detail"]
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(error["loc"][-1] == "confidence" for error in detail)
 
 
 def test_session_status_reflects_completed_questions(client: TestClient):
@@ -370,7 +371,7 @@ def test_next_question_marks_expired_session_inactive(
 
 def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync_engine):
     settings = get_settings()
-    row_count = settings.test_export_seed_row_count
+    row_count = settings.testing.export_seed_row_count
     experiment = _create_experiment(client)
     _seed_export_dataset(sync_engine, experiment["id"], row_count=row_count)
 
@@ -386,7 +387,50 @@ def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync
     assert len(parsed_rows) == row_count + 1
 
 
+def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
+    experiment = _create_experiment(client)
+    _upload_questions(client, experiment["id"])
+    session_payload = _start_session(client, experiment["id"], prolific_pid="PID_ANALYTICS")
+
+    question = client.get(
+        "/raters/next-question",
+        params={"rater_id": session_payload["rater_id"]},
+    ).json()
+
+    submit_response = client.post(
+        "/raters/submit",
+        params={"rater_id": session_payload["rater_id"]},
+        json={
+            "question_id": question["id"],
+            "answer": "Yes",
+            "confidence": 4,
+            "time_started": datetime.now(UTC).isoformat(),
+        },
+    )
+    assert submit_response.status_code == 200
+
+    analytics_response = client.get(f"/admin/experiments/{experiment['id']}/analytics")
+    assert analytics_response.status_code == 200
+
+    payload = analytics_response.json()
+    overview = payload["overview"]
+    assert payload["experiment_name"] == experiment["name"]
+    assert overview["total_questions"] == 2
+    assert overview["total_ratings"] == 1
+    assert overview["total_raters"] == 1
+    assert isinstance(payload["questions"], list) and len(payload["questions"]) == 1
+    assert isinstance(payload["raters"], list) and len(payload["raters"]) == 1
+    assert payload["questions"][0]["answer_distribution"] == {"Yes": 1}
+
+
 def test_migration_runner_current_and_history_commands_succeed():
+    revision_ids = sorted(
+        path.name.split("_")[0]
+        for path in (BACKEND_DIR / "alembic" / "versions").glob("*.py")
+        if path.name != "__init__.py"
+    )
+    assert revision_ids
+
     current = subprocess.run(
         [sys.executable, "scripts/migrate.py", "current"],
         cwd=BACKEND_DIR,
@@ -407,8 +451,9 @@ def test_migration_runner_current_and_history_commands_succeed():
 
     current_output = f"{current.stdout}\n{current.stderr}"
     history_output = f"{history.stdout}\n{history.stderr}"
-    assert "20260225000100" in current_output
-    assert "20260225000100" in history_output
+    assert revision_ids[-1] in current_output
+    for revision_id in revision_ids:
+        assert revision_id in history_output
 
 
 def test_app_creation_succeeds_with_default_env():

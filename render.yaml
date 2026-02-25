@@ -1,16 +1,48 @@
-# Legacy manifest: not actively maintained in this Docker-first workflow.
-# Prefer `docker compose` + `Makefile` commands for local and CI-style execution.
 services:
   - type: web
-    name: human-rating-platform
+    name: human-rating-platform-api
+    runtime: python
     rootDir: backend
+    plan: free
     buildCommand: |
-      cd ../frontend && npm install && npm run build && cp -r dist ../backend/static && cd ../backend && pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
+      if ! command -v uv >/dev/null 2>&1; then
+        UV_VERSION=0.9.28 curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+      fi
+      uv sync --frozen --no-dev --no-install-project
+    preDeployCommand: uv run --no-sync python scripts/migrate.py upgrade head
+    startCommand: uv run --no-sync uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.11"
+      - key: DATABASE__URL
+        fromDatabase:
+          name: human-rating-platform-db
+          property: connectionString
+      - key: APP__CORS_ORIGINS
+        sync: false
+
+  - type: web
+    name: human-rating-platform-web
+    runtime: static
+    rootDir: frontend
+    plan: free
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "20.11.1"
+      - key: VITE_API_HOST
+        sync: false
+      - key: VITE_API_PREFIX
+        value: ""
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  - name: human-rating-platform-db
+    plan: free
+    databaseName: human_rating_platform
+    user: human_rating_platform
