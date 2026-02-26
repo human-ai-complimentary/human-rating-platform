@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import type { Analytics as AnalyticsType } from '../types';
 
@@ -14,11 +14,7 @@ function Analytics({ experimentId, experimentName, onBack }: AnalyticsProps) {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'questions' | 'raters'>('overview');
 
-  useEffect(() => {
-    loadAnalytics();
-  }, [experimentId]);
-
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       setLoading(true);
       const data = await api.getExperimentAnalytics(experimentId);
@@ -28,7 +24,11 @@ function Analytics({ experimentId, experimentName, onBack }: AnalyticsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [experimentId]);
+
+  useEffect(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
 
   const formatTime = (seconds: number | undefined | null): string => {
     if (seconds === undefined || seconds === null || isNaN(seconds)) return '-';

@@ -1,13 +1,15 @@
 SHELL := /bin/sh
 
-.PHONY: help env.sync up down ps logs db.clear db.reset db.migrate db.migrate.new db.seed test
+.PHONY: help env.sync up down ps logs db.clear db.reset db.new db.up db.down db.seed test config.check fmt
 
 COMPOSE ?= docker compose
 TEST_PROFILE ?= test
 TEST_SERVICE ?= e2e
 KEEP_TEST_STACK ?= 0
 MIGRATION_NAME ?= schema_update
-ENV_SYNC_TARGETS := up down ps logs db.clear db.reset db.migrate db.migrate.new db.seed test
+MIGRATION_REVISION ?= -1
+CONFIG_TARGET ?= local
+ENV_SYNC_TARGETS := up down ps logs db.clear db.reset db.new db.up db.down db.seed test config.check
 
 $(ENV_SYNC_TARGETS): env.sync
 
@@ -63,24 +65,24 @@ help: ## Show available commands
 	@printf "\n$(C_BOLD)Database$(C_RESET)\n"
 	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.clear" "Reset development database (destructive)"
 	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.reset" "Rebuild database from Alembic migrations"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.migrate" "Apply committed Alembic migrations"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.migrate.new" "Autogenerate Alembic migration"
+	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.up" "Apply migrations to head"
+	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.down" "Rollback one migration (or MIGRATION_REVISION=...)"
+	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.new" "Create timestamped autogen migration"
 	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.seed" "Seed local dataset from backend/config.toml"
 	@printf "\n$(C_BOLD)Testing$(C_RESET)\n"
 	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make test" "Run characterization tests with db+migrations"
+	@printf "\n$(C_BOLD)Quality$(C_RESET)\n"
+	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make fmt" "Format backend Python with ruff"
 	@printf "\n$(C_BOLD)Setup$(C_RESET)\n"
 	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make env.sync" "Create backend/.env and frontend/.env when missing"
+	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make config.check" "Run backend config validation (optional)"
 
 env.sync: ## Create backend/.env and frontend/.env when missing
-	@if [ -f backend/.env ]; then \
-		printf "$(C_INFO)::$(C_RESET) backend/.env already exists\n"; \
-	else \
+	@if [ ! -f backend/.env ]; then \
 		cp backend/.env.example backend/.env; \
 		printf "$(C_OK)++$(C_RESET) Created backend/.env from backend/.env.example\n"; \
 	fi
-	@if [ -f frontend/.env ]; then \
-		printf "$(C_INFO)::$(C_RESET) frontend/.env already exists\n"; \
-	else \
+	@if [ ! -f frontend/.env ]; then \
 		cp frontend/.env.example frontend/.env; \
 		printf "$(C_OK)++$(C_RESET) Created frontend/.env from frontend/.env.example\n"; \
 	fi
@@ -122,18 +124,25 @@ db.reset: ## Rebuild database from migrations and start API
 	@$(MAKE) --no-print-directory up
 	$(call _ok,Database reset complete)
 
-db.migrate: ## Apply committed Alembic migrations
+db.up: ## Apply migrations to head
 	$(call _title,==> Applying Alembic migrations)
 	@$(COMPOSE) up -d db > /dev/null
 	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
 	@$(COMPOSE) run --rm --no-deps migrate
 	$(call _ok,Migrations applied)
 
-db.migrate.new: ## Autogenerate Alembic migration (set MIGRATION_NAME=...)
+db.down: ## Roll back one migration (set MIGRATION_REVISION=... to override)
+	$(call _title,==> Rolling back Alembic migration $(MIGRATION_REVISION))
+	@$(COMPOSE) up -d db > /dev/null
+	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && sh scripts/migrate.sh downgrade '$(MIGRATION_REVISION)'"
+	$(call _ok,Rollback applied)
+
+db.new: ## Create timestamped autogen migration (set MIGRATION_NAME=...)
 	$(call _title,==> Creating Alembic migration $(MIGRATION_NAME))
 	@$(COMPOSE) up -d db > /dev/null
 	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
-	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/migrate.py revision --autogenerate -m '$(MIGRATION_NAME)'"
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && sh scripts/migrate.sh revision --autogenerate --rev-id \"$$(date -u +%Y%m%d%H%M%S)\" -m '$(MIGRATION_NAME)'"
 	$(call _ok,Migration created)
 
 db.seed: ## Seed local dataset from backend/config.toml
@@ -167,3 +176,13 @@ test: ## Run characterization tests with DB+migrations as dependencies
 		printf "$(C_ERR)xx$(C_RESET) Characterization tests failed (exit=$$exit_code)\n"; \
 	fi; \
 	exit $$exit_code
+
+config.check: ## Run backend config validation (optional)
+	$(call _title,==> Validating backend config)
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/config_check.py --target $(CONFIG_TARGET)"
+	$(call _ok,Config check passed)
+
+fmt: ## Format backend Python with ruff
+	$(call _title,==> Formatting backend Python)
+	@uvx ruff==0.15.2 format backend
+	$(call _ok,Formatting complete)

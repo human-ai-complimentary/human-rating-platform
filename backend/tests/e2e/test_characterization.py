@@ -432,14 +432,14 @@ def test_migration_runner_current_and_history_commands_succeed():
     assert revision_ids
 
     current = subprocess.run(
-        [sys.executable, "scripts/migrate.py", "current"],
+        ["sh", "scripts/migrate.sh", "current"],
         cwd=BACKEND_DIR,
         env=os.environ.copy(),
         capture_output=True,
         text=True,
     )
     history = subprocess.run(
-        [sys.executable, "scripts/migrate.py", "history"],
+        ["sh", "scripts/migrate.sh", "history"],
         cwd=BACKEND_DIR,
         env=os.environ.copy(),
         capture_output=True,
@@ -469,3 +469,21 @@ def test_app_creation_succeeds_with_default_env():
 
     assert result.returncode == 0
     assert "ok" in result.stdout
+
+
+def test_app_creation_fails_with_legacy_env_key():
+    env = os.environ.copy()
+    env["DATABASE_URL"] = "postgresql://legacy:legacy@localhost:5432/legacy"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "from main import create_app; create_app(); print('ok')"],
+        cwd=BACKEND_DIR,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    output = f"{result.stdout}\n{result.stderr}"
+    assert "Unsupported legacy config keys detected" in output
+    assert "DATABASE_URL -> DATABASE__URL" in output

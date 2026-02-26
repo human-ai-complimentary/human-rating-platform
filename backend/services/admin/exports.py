@@ -32,9 +32,11 @@ def build_export_filename(experiment_id: int) -> str:
 
 
 def _resolve_batch_size(batch_size: int | None) -> int:
+    # A request can override batch size for controlled experiments/tests;
+    # otherwise we use the centralized config default.
     if batch_size is not None:
         return batch_size
-    return get_settings().export_stream_batch_size
+    return get_settings().exports.stream_batch_size
 
 
 def _build_export_header_chunk() -> str:

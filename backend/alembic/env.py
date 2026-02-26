@@ -1,26 +1,38 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
 from sqlalchemy import create_engine, pool
 from sqlmodel import SQLModel
+
+from config import get_settings
 
 # Ensure SQLModel metadata is registered before Alembic runs.
 from models import Experiment, Question, Rater, Rating, Upload  # noqa: F401
 
 config = context.config
 
-if config.config_file_name is not None:
+if (
+    config.config_file_name is not None
+    and Path(config.config_file_name).exists()
+    and config.get_section("loggers") is not None
+):
     fileConfig(config.config_file_name)
 
 target_metadata = SQLModel.metadata
 
 
+def _resolve_sqlalchemy_url() -> str:
+    configured_url = config.get_main_option("sqlalchemy.url")
+    if configured_url:
+        return configured_url
+    return get_settings().sync_database_url
+
+
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
-    if not url:
-        raise RuntimeError("Missing sqlalchemy.url for offline migrations")
+    url = _resolve_sqlalchemy_url()
 
     context.configure(
         url=url,
@@ -36,9 +48,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    url = config.get_main_option("sqlalchemy.url")
-    if not url:
-        raise RuntimeError("Missing sqlalchemy.url for online migrations")
+    url = _resolve_sqlalchemy_url()
 
     connectable = create_engine(url, poolclass=pool.NullPool, future=True)
 

@@ -16,35 +16,39 @@ services:
       - pg_data:/var/lib/postgresql/data
 
   migrate:
-    image: python:3.11-slim
+    image: ghcr.io/astral-sh/uv:0.9.28-python3.11-bookworm-slim
     working_dir: /app/backend
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/human_rating_platform
+      DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
+      UV_PROJECT_ENVIRONMENT: /uv-env
     volumes:
       - ./:/app
+      - uv_project_env:/uv-env
     command: >
-      sh -c "pip install --quiet --disable-pip-version-check -r requirements.txt &&
-             python scripts/migrate.py upgrade head"
+      sh -c "uv sync --frozen --no-dev --no-install-project &&
+             sh scripts/migrate.sh upgrade head"
     depends_on:
       db:
         condition: service_healthy
 
   api:
-    image: python:3.11-slim
+    image: ghcr.io/astral-sh/uv:0.9.28-python3.11-bookworm-slim
     working_dir: /app/backend
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/human_rating_platform
+      DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
+      UV_PROJECT_ENVIRONMENT: /uv-env
     volumes:
       - ./:/app
+      - uv_project_env:/uv-env
     command: >
-      sh -c "pip install --quiet --disable-pip-version-check -r requirements.txt &&
-             uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/backend"
+      sh -c "uv sync --frozen --no-dev --no-install-project &&
+             uv run --no-sync uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/backend"
     ports:
       - "8000:8000"
     depends_on:
@@ -52,19 +56,20 @@ services:
         condition: service_completed_successfully
 
   e2e:
-    image: python:3.11-slim
+    image: ghcr.io/astral-sh/uv:0.9.28-python3.11-bookworm-slim
     working_dir: /app/backend
     env_file:
       - backend/.env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/human_rating_platform
+      DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
+      UV_PROJECT_ENVIRONMENT: /uv-env
     volumes:
       - ./:/app
+      - uv_project_env:/uv-env
     command: >
-      sh -c "pip install --quiet --disable-pip-version-check -r requirements.txt &&
-             pip install --quiet --disable-pip-version-check -r requirements-dev.txt &&
-             pytest -q tests/e2e/test_characterization.py"
+      sh -c "uv sync --frozen --no-install-project &&
+             uv run --no-sync pytest -q tests/e2e/test_characterization.py"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -73,3 +78,4 @@ services:
 
 volumes:
   pg_data:
+  uv_project_env:

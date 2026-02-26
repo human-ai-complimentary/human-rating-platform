@@ -1,10 +1,18 @@
+"""Central backend configuration surface.
+
+Design goals for contributors:
+1. Keep config contract explicit and small.
+2. Prefer nested keys for both TOML and env overrides.
+3. Keep overrides ergonomic in real deployments (ignore unrelated env keys).
+"""
+
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from pathlib import Path
-from typing import Optional
 
-from pydantic import AliasChoices, AliasPath, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import (
     BaseSettings,
     DotEnvSettingsSource,
@@ -17,91 +25,76 @@ from pydantic_settings import (
 
 BASE_DIR = Path(__file__).resolve().parent
 
+LEGACY_ENV_KEY_REPLACEMENTS: dict[str, str] = {
+    "APP_ENV": "<removed>",
+    "CORS_ORIGINS": "APP__CORS_ORIGINS",
+    "DATABASE_URL": "DATABASE__URL",
+    "EXPORT_STREAM_BATCH_SIZE": "EXPORTS__STREAM_BATCH_SIZE",
+    "TEST_EXPORT_SEED_ROW_COUNT": "TESTING__EXPORT_SEED_ROW_COUNT",
+    "DEV_SEED_ENABLED": "SEEDING__ENABLED",
+    "DEV_SEED_EXPERIMENT_NAME": "SEEDING__EXPERIMENT_NAME",
+    "DEV_SEED_QUESTION_COUNT": "SEEDING__QUESTION_COUNT",
+    "DEV_SEED_NUM_RATINGS_PER_QUESTION": "SEEDING__NUM_RATINGS_PER_QUESTION",
+    "DEV_SEED_COMPLETION_URL": "SEEDING__PROLIFIC_COMPLETION_URL",
+    "MIGRATION_SCRIPT_LOCATION": "<removed>",
+    "MIGRATION_VERSION_LOCATIONS": "<removed>",
+}
 
-class Settings(BaseSettings):
-    app_env: str = Field(
-        default="development",
-        validation_alias=AliasChoices("APP_ENV", AliasPath("app", "env")),
-    )
+
+class _StrictModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class AppSettings(_StrictModel):
     cors_origins: list[str] = Field(
         default_factory=lambda: ["*"],
-        validation_alias=AliasChoices(
-            "CORS_ORIGINS",
-            AliasPath("app", "cors_origins"),
-        ),
-    )
-    database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/human_rating_platform",
-        validation_alias=AliasChoices("DATABASE_URL", AliasPath("database", "url")),
     )
 
-    migration_script_location: str = Field(
-        default="backend/alembic",
-        validation_alias=AliasChoices(
-            "MIGRATION_SCRIPT_LOCATION",
-            AliasPath("migrations", "script_location"),
-        ),
-    )
-    migration_version_locations: str = Field(
-        default="backend/alembic/versions",
-        validation_alias=AliasChoices(
-            "MIGRATION_VERSION_LOCATIONS",
-            AliasPath("migrations", "version_locations"),
-        ),
-    )
-    export_stream_batch_size: int = Field(
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value: object) -> list[str]:
+        if value is None:
+            return ["*"]
+        if isinstance(value, str):
+            values = [item.strip() for item in value.split(",")]
+            return [item for item in values if item]
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        raise TypeError("APP__CORS_ORIGINS must be a comma-separated string or list")
+
+
+class DatabaseSettings(_StrictModel):
+    url: str = "postgresql://postgres:postgres@localhost:5432/human_rating_platform"
+
+
+class ExportSettings(_StrictModel):
+    stream_batch_size: int = Field(
         default=1000,
         ge=1,
-        validation_alias=AliasChoices(
-            "EXPORT_STREAM_BATCH_SIZE",
-            AliasPath("exports", "stream_batch_size"),
-        ),
     )
-    test_export_seed_row_count: int = Field(
+
+
+class TestingSettings(_StrictModel):
+    export_seed_row_count: int = Field(
         default=1500,
         ge=1,
-        validation_alias=AliasChoices(
-            "TEST_EXPORT_SEED_ROW_COUNT",
-            AliasPath("testing", "export_seed_row_count"),
-        ),
     )
-    dev_seed_enabled: bool = Field(
-        default=False,
-        validation_alias=AliasChoices(
-            "DEV_SEED_ENABLED",
-            AliasPath("seeding", "enabled"),
-        ),
-    )
-    dev_seed_experiment_name: str = Field(
-        default="Seed - Local Baseline",
-        validation_alias=AliasChoices(
-            "DEV_SEED_EXPERIMENT_NAME",
-            AliasPath("seeding", "experiment_name"),
-        ),
-    )
-    dev_seed_question_count: int = Field(
-        default=50,
-        ge=1,
-        validation_alias=AliasChoices(
-            "DEV_SEED_QUESTION_COUNT",
-            AliasPath("seeding", "question_count"),
-        ),
-    )
-    dev_seed_num_ratings_per_question: int = Field(
-        default=3,
-        ge=1,
-        validation_alias=AliasChoices(
-            "DEV_SEED_NUM_RATINGS_PER_QUESTION",
-            AliasPath("seeding", "num_ratings_per_question"),
-        ),
-    )
-    dev_seed_completion_url: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices(
-            "DEV_SEED_COMPLETION_URL",
-            AliasPath("seeding", "prolific_completion_url"),
-        ),
-    )
+
+
+class SeedingSettings(_StrictModel):
+    enabled: bool = False
+    experiment_name: str = "Seed - Local Baseline"
+    question_count: int = Field(default=50, ge=1)
+    num_ratings_per_question: int = Field(default=3, ge=1)
+    prolific_completion_url: str | None = None
+
+
+class Settings(BaseSettings):
+    app: AppSettings = Field(default_factory=AppSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    exports: ExportSettings = Field(default_factory=ExportSettings)
+    testing: TestingSettings = Field(default_factory=TestingSettings)
+    seeding: SeedingSettings = Field(default_factory=SeedingSettings)
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
@@ -120,7 +113,8 @@ class Settings(BaseSettings):
         dotenv_settings: DotEnvSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Highest priority first.
+        # Highest priority first:
+        # constructor kwargs > process env > .env > config.toml > file secrets.
         return (
             init_settings,
             env_settings,
@@ -129,35 +123,66 @@ class Settings(BaseSettings):
             file_secret_settings,
         )
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, value: object) -> list[str]:
-        if value is None:
-            return ["*"]
-        if isinstance(value, str):
-            values = [item.strip() for item in value.split(",")]
-            return [item for item in values if item]
-        if isinstance(value, list):
-            return [str(item) for item in value if str(item).strip()]
-        raise TypeError("CORS_ORIGINS must be a comma-separated string or list")
-
     @property
     def sync_database_url(self) -> str:
-        url = self.database_url.strip()
+        url = self.database.url.strip()
         if url.startswith("postgresql+asyncpg://"):
-            return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            return f"postgresql://{url.removeprefix('postgresql+asyncpg://')}"
         if url.startswith("postgresql://"):
             return url
         if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql://", 1)
-        raise RuntimeError("DATABASE_URL must be a PostgreSQL URL")
+            return f"postgresql://{url.removeprefix('postgres://')}"
+        raise RuntimeError(
+            "DATABASE__URL must start with postgresql://, postgresql+asyncpg://, or postgres://"
+        )
 
     @property
     def async_database_url(self) -> str:
-        sync_url = self.sync_database_url
-        return sync_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self.sync_database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+
+def _iter_env_file_keys(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+
+    keys: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        if "=" not in line:
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key:
+            keys.add(key)
+    return keys
+
+
+def _build_legacy_keys_error(found: set[str]) -> str:
+    lines = [
+        "Unsupported legacy config keys detected. This project only supports nested settings keys.",
+    ]
+    for key in sorted(found):
+        replacement = LEGACY_ENV_KEY_REPLACEMENTS.get(key, "<removed>")
+        if replacement == "<removed>":
+            lines.append(f"- {key} (remove; no replacement)")
+        else:
+            lines.append(f"- {key} -> {replacement}")
+    return "\n".join(lines)
+
+
+def _assert_no_legacy_env_keys() -> None:
+    legacy_keys = set(LEGACY_ENV_KEY_REPLACEMENTS.keys())
+    process_keys = set(os.environ.keys())
+    dotenv_keys = _iter_env_file_keys(BASE_DIR / ".env")
+    found = (process_keys | dotenv_keys).intersection(legacy_keys)
+    if found:
+        raise RuntimeError(_build_legacy_keys_error(found))
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    _assert_no_legacy_env_keys()
     return Settings()

@@ -24,7 +24,7 @@ def _to_optional(value: str | None) -> str | None:
 def main() -> int:
     settings = get_settings()
 
-    if not settings.dev_seed_enabled:
+    if not settings.seeding.enabled:
         print("Skipping seed run because [seeding].enabled is false.")
         return 0
 
@@ -33,22 +33,22 @@ def main() -> int:
     with Session(engine) as session:
         experiment = session.exec(
             select(Experiment)
-            .where(Experiment.name == settings.dev_seed_experiment_name)
+            .where(Experiment.name == settings.seeding.experiment_name)
             .order_by(Experiment.id)
         ).first()
 
         if experiment is None:
             experiment = Experiment(
-                name=settings.dev_seed_experiment_name,
-                num_ratings_per_question=settings.dev_seed_num_ratings_per_question,
-                prolific_completion_url=_to_optional(settings.dev_seed_completion_url),
+                name=settings.seeding.experiment_name,
+                num_ratings_per_question=settings.seeding.num_ratings_per_question,
+                prolific_completion_url=_to_optional(settings.seeding.prolific_completion_url),
             )
             session.add(experiment)
             session.commit()
             session.refresh(experiment)
             print(
                 "Created seed experiment "
-                f"id={experiment.id} name={settings.dev_seed_experiment_name!r}"
+                f"id={experiment.id} name={settings.seeding.experiment_name!r}"
             )
 
         existing_count = session.exec(
@@ -57,14 +57,14 @@ def main() -> int:
             .where(Question.experiment_id == experiment.id)
         ).one()
 
-        if existing_count >= settings.dev_seed_question_count:
+        if existing_count >= settings.seeding.question_count:
             print(
                 "Seed already satisfies configured question count "
-                f"({existing_count}/{settings.dev_seed_question_count})."
+                f"({existing_count}/{settings.seeding.question_count})."
             )
             return 0
 
-        for index in range(existing_count + 1, settings.dev_seed_question_count + 1):
+        for index in range(existing_count + 1, settings.seeding.question_count + 1):
             session.add(
                 Question(
                     experiment_id=experiment.id,
@@ -80,7 +80,7 @@ def main() -> int:
         session.commit()
         print(
             "Seeded questions to target count "
-            f"{settings.dev_seed_question_count} for experiment_id={experiment.id}."
+            f"{settings.seeding.question_count} for experiment_id={experiment.id}."
         )
 
     return 0

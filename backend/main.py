@@ -7,6 +7,8 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from config import get_settings
 from database import build_database
@@ -19,7 +21,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def log_requests(request: Request, call_next):
+async def log_requests(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+) -> Response:
     start_time = time.time()
     response = await call_next(request)
     duration = time.time() - start_time
@@ -66,7 +71,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins or ["*"],
+        allow_origins=settings.app.cors_origins or ["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

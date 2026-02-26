@@ -24,7 +24,10 @@ def sync_engine():
 
 
 @pytest.fixture(autouse=True)
-def reset_database(sync_engine):
+def reset_database(request, sync_engine):
+    if "e2e/" not in request.node.nodeid:
+        return
+
     with sync_engine.begin() as conn:
         conn.execute(
             text(

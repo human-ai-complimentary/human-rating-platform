@@ -4,13 +4,14 @@ services:
     runtime: python
     rootDir: backend
     plan: free
+    autoDeployTrigger: checksPass
     buildCommand: |
       if ! command -v uv >/dev/null 2>&1; then
         UV_VERSION=0.9.28 curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="$HOME/.local/bin:$PATH"
       fi
       uv sync --frozen --no-dev --no-install-project
-    preDeployCommand: uv run --no-sync python scripts/migrate.py upgrade head
+    preDeployCommand: sh scripts/migrate.sh upgrade head
     startCommand: uv run --no-sync uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -20,20 +21,21 @@ services:
           name: human-rating-platform-db
           property: connectionString
       - key: APP__CORS_ORIGINS
-        sync: false
+        value: "https://human-rating-platform-web.onrender.com"
 
   - type: web
     name: human-rating-platform-web
     runtime: static
     rootDir: frontend
     plan: free
+    autoDeployTrigger: checksPass
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
       - key: NODE_VERSION
         value: "20.11.1"
       - key: VITE_API_HOST
-        sync: false
+        value: "https://human-rating-platform-api.onrender.com"
       - key: VITE_API_PREFIX
         value: ""
     routes:

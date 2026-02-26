@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Experiment schemas
@@ -53,7 +53,7 @@ class SessionStatusResponse(BaseModel):
 class RatingSubmit(BaseModel):
     question_id: int
     answer: str
-    confidence: int  # 1-5
+    confidence: int = Field(ge=1, le=5)
     time_started: datetime
 
 

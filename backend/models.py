@@ -23,7 +23,7 @@ class Experiment(SQLModel, table=True):
     __tablename__ = "experiments"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(sa_column=Column(String, nullable=False))
+    name: str = Field(sa_column=Column(String(255), nullable=False))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(
@@ -38,7 +38,7 @@ class Experiment(SQLModel, table=True):
     )
     prolific_completion_url: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, nullable=True),
+        sa_column=Column(String(2048), nullable=True),
     )
 
 
@@ -53,13 +53,13 @@ class Question(SQLModel, table=True):
             nullable=False,
         )
     )
-    question_id: str = Field(sa_column=Column(String, nullable=False))
+    question_id: str = Field(sa_column=Column(String(255), nullable=False))
     question_text: str = Field(sa_column=Column(Text, nullable=False))
     gt_answer: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     options: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     question_type: str = Field(
         default="MC",
-        sa_column=Column(String, nullable=False, server_default=text("'MC'")),
+        sa_column=Column(String(16), nullable=False, server_default=text("'MC'")),
     )
     extra_data: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
@@ -75,14 +75,14 @@ class Rater(SQLModel, table=True):
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    prolific_id: str = Field(sa_column=Column(String, nullable=False))
+    prolific_id: str = Field(sa_column=Column(String(64), nullable=False))
     study_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, nullable=True),
+        sa_column=Column(String(128), nullable=True),
     )  # Prolific STUDY_ID
     session_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, nullable=True),
+        sa_column=Column(String(128), nullable=True),
     )  # Prolific SESSION_ID
     experiment_id: int = Field(
         sa_column=Column(
@@ -158,7 +158,7 @@ class Upload(SQLModel, table=True):
             nullable=False,
         )
     )
-    filename: str = Field(sa_column=Column(String, nullable=False))
+    filename: str = Field(sa_column=Column(String(512), nullable=False))
     uploaded_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(
