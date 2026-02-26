@@ -57,6 +57,14 @@ require_env() {
   fi
 }
 
+require_int() {
+  local name="$1"
+  if ! printf '%s' "${!name}" | grep -Eq '^[0-9]+$'; then
+    echo "error: ${name} must be a positive integer" >&2
+    exit 1
+  fi
+}
+
 now_iso_utc() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
@@ -151,6 +159,15 @@ is_failure_status() {
       return 1
       ;;
   esac
+}
+
+format_log_lines() {
+  local json_file="$1"
+  extract_log_lines "$json_file" \
+    | awk -F '\t' '{
+        ts = $1; $1 = ""; sub(/^\t/, "", $0)
+        print (ts == "" ? "unknown_time" : ts) " " $0
+      }'
 }
 
 extract_log_lines() {
@@ -252,14 +269,7 @@ capture_failure_logs() {
     return 0
   fi
 
-  extract_log_lines "$raw_file" \
-    | awk -F '\t' '{
-        ts = $1
-        $1 = ""
-        sub(/^\t/, "", $0)
-        if (ts == "") ts = "unknown_time"
-        print ts " " $0
-      }' >"$tail_file" || true
+  format_log_lines "$raw_file" >"$tail_file" || true
 
   local predeploy_task_run=""
   local events_file="${ARTIFACT_DIR}/${service}-events.json"
@@ -277,14 +287,7 @@ capture_failure_logs() {
     local pre_tail_file="${ARTIFACT_DIR}/${service}-predeploy-logs-tail.txt"
     : >"$pre_tail_file"
     if query_service_logs "$owner_id" "$service_id" "$deploy_start_iso" "$end_iso" "500" "$pre_raw_file" "$predeploy_task_run" 2>/dev/null; then
-      extract_log_lines "$pre_raw_file" \
-        | awk -F '\t' '{
-            ts = $1
-            $1 = ""
-            sub(/^\t/, "", $0)
-            if (ts == "") ts = "unknown_time"
-            print ts " " $0
-          }' >"$pre_tail_file" || true
+      format_log_lines "$pre_raw_file" >"$pre_tail_file" || true
     else
       echo "unable to fetch predeploy task-run logs for ${service}" >"$pre_tail_file"
     fi
@@ -318,22 +321,18 @@ tail_live_logs() {
     return 0
   fi
 
-  local line_count=0
-  while IFS=$'\t' read -r ts msg; do
-    if [ -z "$ts" ] && [ -z "$msg" ]; then
-      continue
-    fi
-    line_count=$((line_count + 1))
-    if [ "$line_count" -le 50 ]; then
-      if [ -z "$ts" ]; then
-        ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-      fi
-      msg="$(printf '%s' "$msg" | tr '\r' ' ')"
-      printf '[%s] %s %s\n' "$service" "$ts" "$msg"
-    elif [ "$line_count" -eq 51 ]; then
-      printf '[%s] ... log output truncated after 50 lines for this poll tick ...\n' "$service"
-    fi
-  done < <(extract_log_lines "$tmp_file")
+  extract_log_lines "$tmp_file" \
+    | awk -F '\t' -v svc="$service" -v now="$(now_iso_utc)" '
+        $1 == "" && $2 == "" { next }
+        NR <= 50 {
+          ts = ($1 != "") ? $1 : now
+          $1 = ""; sub(/^\t/, "", $0); gsub(/\r/, " ", $0)
+          printf "[%s] %s %s\n", svc, ts, $0
+        }
+        NR == 51 {
+          printf "[%s] ... log output truncated after 50 lines for this poll tick ...\n", svc
+        }
+      '
 
   local latest_ts
   latest_ts="$(latest_log_timestamp "$tmp_file")"
@@ -451,19 +450,8 @@ case "$RENDER_LOG_MODE" in
     ;;
 esac
 
-if printf '%s' "$RENDER_DEPLOY_POLL_SECONDS" | grep -Eq '^[0-9]+$'; then
-  :
-else
-  echo "error: RENDER_DEPLOY_POLL_SECONDS must be an integer" >&2
-  exit 1
-fi
-
-if printf '%s' "$RENDER_DEPLOY_TIMEOUT_SECONDS" | grep -Eq '^[0-9]+$'; then
-  :
-else
-  echo "error: RENDER_DEPLOY_TIMEOUT_SECONDS must be an integer" >&2
-  exit 1
-fi
+require_int RENDER_DEPLOY_POLL_SECONDS
+require_int RENDER_DEPLOY_TIMEOUT_SECONDS
 
 if [ "${#target_services[@]}" -eq 0 ]; then
   mkdir -p "$ARTIFACT_DIR"
