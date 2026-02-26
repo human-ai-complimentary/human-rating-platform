@@ -126,9 +126,7 @@ class RenderValidator(ProviderValidator):
 
     def check_cors_not_wildcard(self, settings: Settings, result: ValidationResult) -> None:
         if "*" in settings.app.cors_origins:
-            result.add_warning(
-                "APP__CORS_ORIGINS includes '*' — overly permissive for production."
-            )
+            result.add_warning("APP__CORS_ORIGINS includes '*' — overly permissive for production.")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
