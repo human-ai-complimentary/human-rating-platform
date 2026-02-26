@@ -176,7 +176,7 @@ while IFS= read -r file; do
     frontend/*)
       deploy_web=true
       ;;
-    scripts/deploy.sh|scripts/resolve_deploy_target.sh|scripts/resolve_deploy_commit_sha.sh|.github/workflows/deploy-render.yml)
+    scripts/deploy.sh|scripts/resolve_deploy_target.sh|scripts/resolve_deploy_commit_sha.sh|.github/workflows/deploy.yml)
       deploy_api=true
       deploy_web=true
       ;;

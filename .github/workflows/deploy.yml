@@ -7,8 +7,8 @@
 #                     Optional commit_sha input pins deploy to exact commit.
 #
 # Path routing (auto mode):
-#   backend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy-render.yml -> api
-#   frontend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy-render.yml -> web
+#   backend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy.yml -> api
+#   frontend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy.yml -> web
 #   both changed -> both, neither -> none
 #   deploy calls are commit-pinned via commitId (manual commit_sha overrides workflow SHA)
 #

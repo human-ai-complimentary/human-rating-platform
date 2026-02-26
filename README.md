@@ -19,13 +19,13 @@ backend/              FastAPI app, models, services, migrations, tests
   routers/            API route handlers (admin, raters)
   services/           Business logic (admin/, rater/)
   alembic/            Migration config + versions
-  scripts/            migrate.sh, seed_dev.py, config_check.py
+  scripts/            migrate.sh, predeploy.sh, seed_dev.py, config_check.py
   config.toml         Default local settings
 frontend/             React + TypeScript + Vite SPA
   src/api.ts          API client (route map, request pipeline, error handling)
   src/components/     UI components (AdminView, RaterView, ExperimentDetail, etc.)
 scripts/              CI/deploy scripts (deploy.sh, resolve_deploy_target.sh)
-.github/workflows/    CI (main.yml) + deploy (deploy-render.yml)
+.github/workflows/    CI (main.yml) + deploy (deploy.yml)
 docker-compose.yml    Local dev stack (db + api + test runner)
 sample_questions.csv  Example CSV for testing uploads
 ```
@@ -214,7 +214,7 @@ Deploys are GitHub-driven and API-triggered (Render auto-deploy is off):
 ### Backend runtime on Render
 
 - **Build:** `uv sync --frozen --no-dev --no-install-project`
-- **Predeploy:** `sh scripts/migrate.sh upgrade head`
+- **Predeploy:** `sh scripts/predeploy.sh`
 - **Start:** `uv run --no-sync uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 ### Required GitHub Actions secrets
