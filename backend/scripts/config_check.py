@@ -1,6 +1,28 @@
+"""Validate load-bearing backend configuration before deployment.
+
+Extension guide
+───────────────
+  New provider?  Subclass ``ProviderValidator`` — it auto-registers.
+  New check?     Add a ``check_*`` method to the validator — it auto-runs.
+
+Example:
+
+    class RailwayValidator(ProviderValidator):
+        name = "railway"
+
+        def check_database_is_remote(self, s: Settings, r: ValidationResult) -> None:
+            ...
+
+        def check_redis_configured(self, s: Settings, r: ValidationResult) -> None:
+            ...
+
+That's it. ``--target railway`` appears in the CLI automatically.
+"""
+
 from __future__ import annotations
 
 import argparse
+import inspect
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,83 +35,113 @@ if str(BACKEND_DIR) not in sys.path:
 
 from config import Settings, get_settings  # noqa: E402
 
+# ── Result container ──────────────────────────────────────────────────────────
+
 
 @dataclass
 class ValidationResult:
-    """Holds the result of a configuration validation."""
+    """Accumulates errors and warnings from one validation run."""
 
-    is_valid: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
-    def add_error(self, message: str) -> None:
-        self.is_valid = False
-        self.errors.append(message)
+    # ── mutators ──────────────────────────────────────────────────────────
+    def add_error(self, msg: str) -> None:
+        self.errors.append(msg)
 
-    def add_warning(self, message: str) -> None:
-        self.warnings.append(message)
+    def add_warning(self, msg: str) -> None:
+        self.warnings.append(msg)
+
+    # ── queries ───────────────────────────────────────────────────────────
+    @property
+    def ok(self) -> bool:
+        return len(self.errors) == 0
+
+    def __bool__(self) -> bool:
+        return self.ok
+
+
+# ── Validator base + auto-registration ────────────────────────────────────────
+
+_REGISTRY: dict[str, type] = {}  # populated by ProviderValidator.__init_subclass__
 
 
 class ProviderValidator(ABC):
-    """Base class for environment/provider-specific configuration checks.
+    """Base class for provider-specific configuration checks.
 
-    To add a new provider:
-      1. Subclass ProviderValidator
-      2. Set the `name` class var (this becomes the --target CLI value)
-      3. Implement `validate()`
-      4. Register it in `get_validators()`
+    Subclasses **must** set ``name`` and implement at least one ``check_*``
+    method.  All public ``check_*`` methods are discovered and called
+    automatically — no manual wiring required.
     """
 
     name: ClassVar[str]
 
-    @abstractmethod
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if inspect.isabstract(cls):
+            return
+        if not hasattr(cls, "name") or not isinstance(cls.name, str):
+            raise TypeError(f"{cls.__name__} must define a `name: ClassVar[str]`")
+        if cls.name in _REGISTRY:
+            raise ValueError(f"Duplicate validator name: {cls.name!r}")
+        _REGISTRY[cls.name] = cls
+
     def validate(self, settings: Settings, result: ValidationResult) -> None:
-        """Evaluate settings and append any warnings or errors to the result."""
+        """Run every ``check_*`` method on *settings*, collecting into *result*."""
+        for attr in sorted(dir(self)):
+            if attr.startswith("check_") and callable(getattr(self, attr)):
+                getattr(self, attr)(settings, result)
+
+    @abstractmethod
+    def _abstract_guard(self) -> None:
+        """Forces subclasses to be concrete (at least one override required)."""
+
+
+# ── Concrete validators ──────────────────────────────────────────────────────
 
 
 class LocalValidator(ProviderValidator):
-    """Validates local development configuration."""
+    """Local development — intentionally permissive."""
 
     name = "local"
 
-    def validate(self, settings: Settings, result: ValidationResult) -> None:
-        # Local environments are generally permissive. Add specific checks here if needed.
-        pass
+    def _abstract_guard(self) -> None: ...
 
 
 class RenderValidator(ProviderValidator):
-    """Validates configuration for Render deployments."""
+    """Render deployment checks."""
 
     name = "render"
 
-    def validate(self, settings: Settings, result: ValidationResult) -> None:
-        # 1. Database connection check
+    def _abstract_guard(self) -> None: ...
+
+    def check_database_is_remote(self, settings: Settings, result: ValidationResult) -> None:
         try:
-            sync_url = settings.sync_database_url
-            if "localhost" in sync_url or "@db:" in sync_url:
-                result.add_error("DATABASE__URL points to a local host instead of a managed database.")
+            url = settings.sync_database_url
         except RuntimeError as exc:
             result.add_error(f"DATABASE__URL resolution failed: {exc}")
+            return
+        if "localhost" in url or "@db:" in url:
+            result.add_error("DATABASE__URL points to a local host instead of a managed database.")
 
-        # 2. CORS check
+    def check_cors_not_wildcard(self, settings: Settings, result: ValidationResult) -> None:
         if "*" in settings.app.cors_origins:
-            result.add_warning("APP__CORS_ORIGINS includes '*' which is overly permissive for production.")
+            result.add_warning(
+                "APP__CORS_ORIGINS includes '*' — overly permissive for production."
+            )
 
 
-def get_validators() -> dict[str, ProviderValidator]:
-    """Discover and return all available provider validators."""
-    validators = [LocalValidator(), RenderValidator()]
-    return {v.name: v for v in validators}
+# ── CLI ───────────────────────────────────────────────────────────────────────
 
 
-def _build_parser(available_targets: list[str]) -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate load-bearing backend configuration against specific deployment targets.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--target",
-        choices=available_targets,
+        choices=sorted(_REGISTRY),
         default="local",
         help="Validation profile (deployment provider).",
     )
@@ -97,14 +149,11 @@ def _build_parser(available_targets: list[str]) -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    registry = get_validators()
-    parser = _build_parser(list(registry.keys()))
-    args = parser.parse_args()
-
-    validator = registry[args.target]
+    args = _build_parser().parse_args()
+    validator = _REGISTRY[args.target]()
     result = ValidationResult()
 
-    print(f"🔍 Validating configuration for target: '{validator.name}'...")
+    print(f"🔍 config check  target={validator.name}")
 
     try:
         settings = get_settings()
@@ -112,22 +161,17 @@ def main() -> int:
     except Exception as exc:  # pragma: no cover
         result.add_error(f"Failed to parse settings: {exc}")
 
-    # Output Results
-    for warning in result.warnings:
-        print(f"⚠️  WARN: {warning}")
+    for w in result.warnings:
+        print(f"⚠️  WARN: {w}")
+    for e in result.errors:
+        print(f"❌ ERROR: {e}", file=sys.stderr)
 
-    for error in result.errors:
-        print(f"❌ ERROR: {error}", file=sys.stderr)
-
-    if not result.is_valid:
-        print(f"\n💥 Config check failed with {len(result.errors)} error(s).")
+    if not result:
+        print(f"\n💥 Config check failed — {len(result.errors)} error(s).")
         return 1
 
-    if result.warnings:
-        print(f"\n✅ Config check passed cleanly, but with {len(result.warnings)} warning(s).")
-    else:
-        print("\n✅ Config check passed cleanly. You are good to go!")
-
+    suffix = f" ({len(result.warnings)} warning(s))" if result.warnings else ""
+    print(f"\n✅ Config check passed.{suffix}")
     return 0
 
 

@@ -153,8 +153,10 @@ db.seed: ## Seed local dataset from backend/config.toml
 	$(call _title,==> Seeding local dataset)
 	@$(COMPOSE) up -d db > /dev/null
 	@until $(COMPOSE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done
-	@$(COMPOSE) run --rm --no-deps migrate
-	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/seed_dev.py"
+	@$(COMPOSE) run --rm --no-deps migrate sh -c "\
+		uv sync --frozen --no-dev --no-install-project && \
+		sh scripts/migrate.sh upgrade head && \
+		uv run --no-sync python scripts/seed_dev.py"
 	$(call _ok,Seed command finished)
 
 test: ## Run characterization tests with DB+migrations as dependencies
