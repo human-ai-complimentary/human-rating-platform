@@ -345,6 +345,22 @@ tail_live_logs() {
   fi
 }
 
+capture_result() {
+  local result="$1"
+  echo "result=${result}" >>"$SUMMARY_FILE"
+  for service in "${target_services[@]}"; do
+    local service_id_var="${service}_service_id"
+    local deploy_id_var="${service}_deploy_id"
+    local state_var="${service}_state"
+    local started_at_var="${service}_deploy_started_at"
+    echo "${service}_status=${!state_var}" >>"$SUMMARY_FILE"
+    capture_snapshots "$service" "${!service_id_var}" "${!deploy_id_var}"
+    if [ "$result" != "success" ]; then
+      capture_failure_logs "$service" "${!service_id_var}" "${!started_at_var}" "${!deploy_id_var}"
+    fi
+  done
+}
+
 trigger_deploy() {
   local service="$1"
   local service_id="$2"
@@ -548,44 +564,19 @@ while true; do
   done
 
   if [ "$all_live" = true ]; then
-    echo "result=success" >>"$SUMMARY_FILE"
-    for service in "${target_services[@]}"; do
-      service_id_var="${service}_service_id"
-      deploy_id_var="${service}_deploy_id"
-      state_var="${service}_state"
-      echo "${service}_status=${!state_var}" >>"$SUMMARY_FILE"
-      capture_snapshots "$service" "${!service_id_var}" "${!deploy_id_var}"
-    done
+    capture_result success
     echo "Render deploy completed successfully."
     exit 0
   fi
 
   if [ "$any_failed" = true ]; then
-    echo "result=failure" >>"$SUMMARY_FILE"
-    for service in "${target_services[@]}"; do
-      service_id_var="${service}_service_id"
-      deploy_id_var="${service}_deploy_id"
-      state_var="${service}_state"
-      started_at_var="${service}_deploy_started_at"
-      echo "${service}_status=${!state_var}" >>"$SUMMARY_FILE"
-      capture_snapshots "$service" "${!service_id_var}" "${!deploy_id_var}"
-      capture_failure_logs "$service" "${!service_id_var}" "${!started_at_var}" "${!deploy_id_var}"
-    done
+    capture_result failure
     echo "error: render deploy failed (${status_line})" >&2
     exit 1
   fi
 
   if [ "$(date +%s)" -ge "$deadline_epoch" ]; then
-    echo "result=timeout" >>"$SUMMARY_FILE"
-    for service in "${target_services[@]}"; do
-      service_id_var="${service}_service_id"
-      deploy_id_var="${service}_deploy_id"
-      state_var="${service}_state"
-      started_at_var="${service}_deploy_started_at"
-      echo "${service}_status=${!state_var}" >>"$SUMMARY_FILE"
-      capture_snapshots "$service" "${!service_id_var}" "${!deploy_id_var}"
-      capture_failure_logs "$service" "${!service_id_var}" "${!started_at_var}" "${!deploy_id_var}"
-    done
+    capture_result timeout
     echo "error: timed out waiting for render deploys (${status_line})" >&2
     exit 1
   fi

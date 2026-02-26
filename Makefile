@@ -53,34 +53,23 @@ define _warn
 @printf "$(C_WARN)!!$(C_RESET) %s\n" "$(1)"
 endef
 
+# Auto-generated help: parses ##@ lines as group headers and ## comments on
+# targets as descriptions. Add a new target with `target: ## desc` or a new
+# group with `##@` and it appears in `make help` automatically.
 help: ## Show available commands
 	@printf "$(C_BOLD)$(C_PRIMARY)HUMAN RATING PLATFORM$(C_RESET)\n"
 	@printf "$(C_DIM)Modern local workflow commands$(C_RESET)\n"
 	@printf "$(C_DIM)Set NO_COLOR=1 to disable styling$(C_RESET)\n\n"
-	@printf "$(C_BOLD)Core$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make up" "Start db + alembic migrations + api (hot reload)"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make down" "Stop services (keep database volume)"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make ps" "Show running compose services"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make logs" "Tail db/api logs"
-	@printf "\n$(C_BOLD)Database$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.clear" "Reset development database (destructive)"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.reset" "Rebuild database from Alembic migrations"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.up" "Apply migrations to head"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.down" "Rollback one migration (or MIGRATION_REVISION=...)"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.new" "Create timestamped autogen migration"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make db.seed" "Seed local dataset from backend/config.toml"
-	@printf "\n$(C_BOLD)Testing$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make test" "Run characterization tests with db+migrations"
-	@printf "\n$(C_BOLD)Quality$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make fmt" "Format backend Python with ruff"
-	@printf "\n$(C_BOLD)Setup$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make env.sync" "Create backend/.env and frontend/.env when missing"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make config.check" "Run backend config validation (optional)"
-	@printf "\n$(C_BOLD)Tailscale$(C_RESET)\n"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make tailscale.up" "Expose local stack via Tailscale (Vite handles backend proxy)"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make tailscale.down" "Remove Tailscale exposure"
-	@printf "  $(C_CMD)%-18s$(C_RESET) %s\n" "make tailscale.status" "Show Tailscale proxy status"
+	@awk ' \
+		/^##@/ { printf "\n$(C_BOLD)%s$(C_RESET)\n", substr($$0, 5); next } \
+		/^[a-zA-Z_.%-]+:.*##/ { \
+			target = $$1; sub(/:.*/, "", target); \
+			help = $$0; sub(/.*## */, "", help); \
+			printf "  $(C_CMD)%-18s$(C_RESET) %s\n", "make " target, help \
+		} \
+	' $(MAKEFILE_LIST)
 
+##@ Setup
 env.sync: ## Create backend/.env and frontend/.env when missing
 	@if [ ! -f backend/.env ]; then \
 		cp backend/.env.example backend/.env; \
@@ -91,6 +80,7 @@ env.sync: ## Create backend/.env and frontend/.env when missing
 		printf "$(C_OK)++$(C_RESET) Created frontend/.env from frontend/.env.example\n"; \
 	fi
 
+##@ Core
 up: ## Start db + alembic migrations + api (hot reload)
 	$(call _title,==> Bringing up local services)
 	$(call _info,Step 1/3 - Starting Postgres)
@@ -116,6 +106,7 @@ logs: ## Tail db/api logs
 	$(call _info,Press Ctrl+C to stop following logs)
 	@$(COMPOSE) logs -f --tail=200 db api
 
+##@ Database
 db.clear: ## Reset development database (destructive)
 	$(call _title,==> Resetting local database)
 	$(call _warn,This deletes local Postgres data volumes.)
@@ -159,6 +150,7 @@ db.seed: ## Seed local dataset from backend/config.toml
 		uv run --no-sync python scripts/seed_dev.py"
 	$(call _ok,Seed command finished)
 
+##@ Testing
 test: ## Run characterization tests with DB+migrations as dependencies
 	$(call _title,==> Running characterization tests)
 	$(call _info,Using docker compose profile: $(TEST_PROFILE))
@@ -183,6 +175,7 @@ test: ## Run characterization tests with DB+migrations as dependencies
 	fi; \
 	exit $$exit_code
 
+##@ Quality
 config.check: ## Run backend config validation (optional)
 	$(call _title,==> Validating backend config)
 	@$(COMPOSE) run --rm --no-deps migrate sh -c "uv sync --frozen --no-dev --no-install-project && uv run --no-sync python scripts/config_check.py --target $(CONFIG_TARGET)"
@@ -193,6 +186,7 @@ fmt: ## Format backend Python with ruff
 	@uvx ruff==0.15.2 format backend
 	$(call _ok,Formatting complete)
 
+##@ Tailscale
 tailscale.up: ## Expose local stack via Tailscale (both frontend and backend)
 	$(call _title,==> Starting Tailscale Proxy)
 	@tailscale serve reset || true
