@@ -1,0 +1,260 @@
+# ─── Render Deploy ────────────────────────────────────────────────────────────
+# Deploys API + web to Render and polls until terminal status.
+#
+# Trigger model:
+#   push              Auto-fires on DEPLOY_BRANCH, then waits for CI checks.
+#   workflow_dispatch Manual trigger from any branch, with target override.
+#                     Optional commit_sha input pins deploy to exact commit.
+#
+# Path routing (auto mode):
+#   backend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy-render.yml -> api
+#   frontend/** | scripts/deploy.sh | scripts/resolve_deploy_target.sh | scripts/resolve_deploy_commit_sha.sh | deploy-render.yml -> web
+#   both changed -> both, neither -> none
+#   deploy calls are commit-pinned via commitId (manual commit_sha overrides workflow SHA)
+#
+# Required secrets:
+#   RENDER_API_KEY · RENDER_API_SERVICE_ID · RENDER_WEB_SERVICE_ID
+# ───────────────────────────────────────────────────────────────────────────────
+
+name: 🚀 Deploy Render
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: Deploy target override (auto uses path routing)
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - api
+          - web
+          - both
+      commit_sha:
+        description: Optional 40-char commit SHA to deploy instead of the workflow SHA
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: deploy-render-${{ github.ref_name || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  gate-ci:
+    name: 🛂 Gate On CI Checks
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      ci_ok: ${{ steps.gate.outputs.ci_ok }}
+      ci_run_id: ${{ steps.gate.outputs.ci_run_id }}
+      ci_conclusion: ${{ steps.gate.outputs.ci_conclusion }}
+      ci_reason: ${{ steps.gate.outputs.ci_reason }}
+    steps:
+      - name: ⏱️ Wait for CI checks on this commit
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_WORKFLOW_NAME: "✅ CI Checks"
+          MAX_WAIT_SECONDS: "2700"
+          POLL_SECONDS: "10"
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            {
+              echo "ci_ok=true"
+              echo "ci_run_id=manual"
+              echo "ci_conclusion=manual"
+              echo "ci_reason=manual dispatch bypassed CI gate"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          elapsed=0
+          ci_run_id=""
+
+          while [ "$elapsed" -lt "$MAX_WAIT_SECONDS" ]; do
+            ci_run_id="$(
+              curl -fsSL \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=50" \
+                | jq -r --arg wf "$CI_WORKFLOW_NAME" '
+                    [.workflow_runs[] | select(.name == $wf)]
+                    | sort_by(.created_at)
+                    | reverse
+                    | .[0].id // empty
+                  '
+            )"
+
+            if [ -n "$ci_run_id" ]; then
+              run_json="$(
+                curl -fsSL \
+                  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}"
+              )"
+              status="$(printf '%s' "$run_json" | jq -r '.status')"
+              conclusion="$(printf '%s' "$run_json" | jq -r '.conclusion // ""')"
+
+              echo "CI run ${ci_run_id}: status=${status} conclusion=${conclusion}"
+
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  ci_ok="true"
+                  ci_reason="CI checks passed for commit ${GITHUB_SHA}"
+                else
+                  ci_ok="false"
+                  ci_reason="CI checks completed with conclusion '${conclusion}' for commit ${GITHUB_SHA}"
+                fi
+
+                {
+                  echo "ci_ok=$ci_ok"
+                  echo "ci_run_id=$ci_run_id"
+                  echo "ci_conclusion=$conclusion"
+                  echo "ci_reason=$ci_reason"
+                } >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            else
+              echo "CI run not visible yet for sha ${GITHUB_SHA}; retrying..."
+            fi
+
+            sleep "$POLL_SECONDS"
+            elapsed=$((elapsed + POLL_SECONDS))
+          done
+
+          {
+            echo "ci_ok=false"
+            echo "ci_run_id=${ci_run_id:-}"
+            echo "ci_conclusion=timeout"
+            echo "ci_reason=timed out waiting ${MAX_WAIT_SECONDS}s for CI checks on commit ${GITHUB_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+  resolve-target:
+    name: 🧭 Resolve Deploy Target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      target: ${{ steps.resolve.outputs.target }}
+      reason: ${{ steps.resolve.outputs.reason }}
+      changed_count: ${{ steps.resolve.outputs.changed_count }}
+      changed_files: ${{ steps.resolve.outputs.changed_files }}
+      deploy_sha: ${{ steps.resolve-sha.outputs.target_sha }}
+      deploy_sha_reason: ${{ steps.resolve-sha.outputs.target_reason }}
+    steps:
+      - name: 📥 Checkout ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔐 Resolve deploy commit SHA
+        id: resolve-sha
+        env:
+          REQUESTED_COMMIT_SHA: ${{ github.event.inputs.commit_sha || '' }}
+        run: bash ./scripts/resolve_deploy_commit_sha.sh
+
+      - name: 🧠 Resolve target from manual override or changed paths
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_TARGET: ${{ github.event.inputs.deploy_target || 'auto' }}
+          GITHUB_SHA: ${{ steps.resolve-sha.outputs.target_sha }}
+          GITHUB_EVENT_BEFORE: ${{ github.event.before || '' }}
+        run: ./scripts/resolve_deploy_target.sh
+
+  deploy:
+    name: 🚀 Deploy to Render
+    needs:
+      - gate-ci
+      - resolve-target
+    if: needs.gate-ci.outputs.ci_ok == 'true' && needs.resolve-target.outputs.target != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: 📥 Checkout ref
+        uses: actions/checkout@v4
+
+      - name: 🚀 Trigger deploy and poll status
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_API_SERVICE_ID: ${{ secrets.RENDER_API_SERVICE_ID }}
+          RENDER_WEB_SERVICE_ID: ${{ secrets.RENDER_WEB_SERVICE_ID }}
+          RENDER_COMMIT_ID: ${{ needs.resolve-target.outputs.deploy_sha }}
+          RENDER_DEPLOY_TARGET: ${{ needs.resolve-target.outputs.target }}
+          RENDER_LOG_MODE: tail
+          RENDER_DEPLOY_POLL_SECONDS: "10"
+          RENDER_DEPLOY_TIMEOUT_SECONDS: "1200"
+          RENDER_ARTIFACT_DIR: artifacts/render-deploy
+          RENDER_CLEAR_CACHE: clear
+        run: ./scripts/deploy.sh
+
+      - name: 📦 Upload deploy artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-deploy-artifacts
+          path: artifacts/render-deploy
+
+      - name: 📝 Publish deploy summary
+        if: always()
+        run: |
+          {
+            echo "## 🚀 Render Deploy Summary"
+            echo "- Target: ${{ needs.resolve-target.outputs.target }}"
+            echo "- Resolver reason: ${{ needs.resolve-target.outputs.reason }}"
+            echo "- Changed files seen: ${{ needs.resolve-target.outputs.changed_count }}"
+            echo "- Changed preview: ${{ needs.resolve-target.outputs.changed_files }}"
+            echo "- Deploy commit: ${{ needs.resolve-target.outputs.deploy_sha }}"
+            echo "- Deploy commit source: ${{ needs.resolve-target.outputs.deploy_sha_reason }}"
+            echo "- Artifact: render-deploy-artifacts"
+            echo
+            if [ -f artifacts/render-deploy/summary.txt ]; then
+              echo "### 📄 deploy summary.txt"
+              echo '```text'
+              cat artifacts/render-deploy/summary.txt
+              echo '```'
+            fi
+            if [ -f artifacts/render-deploy/timeline.log ]; then
+              echo "### 📈 timeline (last 30 lines)"
+              echo '```text'
+              tail -n 30 artifacts/render-deploy/timeline.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  skip-deploy:
+    name: ⏭️ Skip Render Deploy
+    needs:
+      - gate-ci
+      - resolve-target
+    if: needs.resolve-target.outputs.target == 'none' || needs.gate-ci.outputs.ci_ok != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📝 Publish skip summary
+        run: |
+          {
+            echo "## ⏭️ Render Deploy Skipped"
+            if [ "${{ needs.resolve-target.outputs.target }}" = "none" ]; then
+              echo "- Reason: no deployable surface changed."
+            else
+              echo "- Reason: CI gate blocked deploy."
+              echo "- CI gate detail: ${{ needs.gate-ci.outputs.ci_reason }}"
+              echo "- CI run id: ${{ needs.gate-ci.outputs.ci_run_id }}"
+              echo "- CI conclusion: ${{ needs.gate-ci.outputs.ci_conclusion }}"
+            fi
+            echo "- Resolver target: ${{ needs.resolve-target.outputs.target }}"
+            echo "- Resolver reason: ${{ needs.resolve-target.outputs.reason }}"
+            echo "- Changed files seen: ${{ needs.resolve-target.outputs.changed_count }}"
+            echo "- Changed preview: ${{ needs.resolve-target.outputs.changed_files }}"
+          } >> "$GITHUB_STEP_SUMMARY"
