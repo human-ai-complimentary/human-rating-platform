@@ -1,6 +1,6 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser, UserButton } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser, useAuth, UserButton } from '@clerk/clerk-react';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
@@ -96,6 +96,7 @@ function RequireSignIn({ message }: { message: string }) {
 
 function AdminPage({ children }: { children?: React.ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const [state, setState] = React.useState<'idle' | 'loading' | 'ok' | 'forbidden' | 'error'>('idle');
   const [message, setMessage] = React.useState<string>('');
 
@@ -110,7 +111,11 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     (async () => {
       setState('loading');
       try {
-        const resp = await api.adminLogin(email);
+        const token = await getToken({ template: 'admin' });
+        if (!token) {
+          throw new Error('Missing Clerk session token');
+        }
+        const resp = await api.adminLogin(token);
         if (cancelled) return;
         if ((resp as any).ok === true) {
           setState('ok');
@@ -139,7 +144,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress]);
+  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress, getToken]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return (

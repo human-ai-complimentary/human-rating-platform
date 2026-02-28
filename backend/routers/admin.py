@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, HTTPException
+from fastapi import APIRouter, Depends, File, Query, UploadFile, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,14 +17,30 @@ secure_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends
 
 
 @router.post("/auth/login")
-async def admin_login(payload: dict, manager=Depends(get_admin_manager)):
-    email = (payload or {}).get("email")
-    if not isinstance(email, str) or not email.strip():
-        raise HTTPException(status_code=400, detail="Email is required")
+async def admin_login(request: Request, manager=Depends(get_admin_manager)):
+    # Require a Clerk session token via Authorization: Bearer <token>
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth or not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
 
+    token = auth.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid Bearer token")
+
+    # Verify token and extract email from verified claims
+    from services.authn import verify_clerk_token_and_get_email
     from config import get_settings
 
     settings = get_settings()
+    try:
+        email = await verify_clerk_token_and_get_email(token, settings)
+    except HTTPException:
+        # Pass through explicit HTTP errors (e.g., 401)
+        raise
+    except Exception:
+        # Hide internals behind a generic 401
+        raise HTTPException(status_code=401, detail="Invalid Clerk token")
+
     allow = {e.strip().lower() for e in settings.admin_allowlist}
     if email.strip().lower() not in allow:
         return JSONResponse(status_code=403, content={"message": "Email is not allowlisted"})

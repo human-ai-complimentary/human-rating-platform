@@ -80,6 +80,12 @@ class TestingSettings(_StrictModel):
     )
 
 
+class ClerkSettings(_StrictModel):
+    issuer: str = ""
+    jwks_url: str = ""
+    template: str = "admin"
+
+
 class SeedingSettings(_StrictModel):
     enabled: bool = False
     experiment_name: str = "Seed - Local Baseline"
@@ -93,6 +99,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     exports: ExportSettings = Field(default_factory=ExportSettings)
     testing: TestingSettings = Field(default_factory=TestingSettings)
+    clerk: ClerkSettings = Field(default_factory=ClerkSettings)
     seeding: SeedingSettings = Field(default_factory=SeedingSettings)
 
     # Admin/session config (mapped from flat env vars for ergonomics)

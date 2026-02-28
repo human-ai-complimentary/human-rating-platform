@@ -39,6 +39,7 @@ type RequestOptions = {
   query?: QueryParams;
   json?: unknown; // mutually exclusive with formData
   formData?: FormData; // mutually exclusive with json
+  headers?: Record<string, string>;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -198,7 +199,7 @@ async function request(
   path: string,
   options: RequestOptions = {}
 ): Promise<{ url: string; response: Response }> {
-  const { method = 'GET', query, json, formData } = options;
+  const { method = 'GET', query, json, formData, headers } = options;
 
   // Runtime guard: TypeScript can't enforce mutual exclusion on two optional
   // fields, so we catch it here.
@@ -211,8 +212,10 @@ async function request(
   if (formData !== undefined) {
     init.body = formData;
   } else if (json !== undefined) {
-    init.headers = { 'Content-Type': JSON_CONTENT_TYPE };
+    init.headers = { ...(headers || {}), 'Content-Type': JSON_CONTENT_TYPE };
     init.body = JSON.stringify(json);
+  } else if (headers) {
+    init.headers = headers;
   }
 
   const url = buildUrl(path, query);
@@ -235,10 +238,10 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 export const api = {
   // ── Admin ────────────────────────────────────────────────────────────────
 
-  async adminLogin(email: string): Promise<{ ok: boolean } | MessageResponse> {
+  async adminLogin(token: string): Promise<{ ok: boolean } | MessageResponse> {
     return requestJson<{ ok: boolean } | MessageResponse>(routes.admin.authLogin, {
       method: 'POST',
-      json: { email },
+      headers: { Authorization: `Bearer ${token}` },
     });
   },
 

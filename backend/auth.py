@@ -81,16 +81,17 @@ class AdminSessionManager:
 
     def set_cookie(self, response: Response, email: str) -> None:
         value = self._encode(email)
+        # Use SameSite=None only when cookies are Secure (production, cross-site).
+        # In local dev, sending a Secure cookie over http://localhost is rejected by browsers,
+        # and SameSite=None without Secure is also rejected; use Lax for dev/proxy.
+        same_site = "none" if self._settings.cookie_secure else "lax"
         response.set_cookie(
             key=self.cookie_name,
             value=value,
             max_age=self._settings.hrp_session_max_age,
             httponly=True,
             secure=self._settings.cookie_secure,
-            # In Render, frontend and backend are different origins. Use
-            # SameSite=None so the browser includes the cookie on cross-site
-            # requests when credentials: 'include' is set.
-            samesite="none",
+            samesite=same_site,
             path="/",
         )
 
