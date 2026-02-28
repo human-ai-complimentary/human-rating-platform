@@ -20,24 +20,6 @@ function RaterView() {
   const studyId = searchParams.get('STUDY_ID');
   const sessionId = searchParams.get('SESSION_ID');
 
-  useEffect(() => {
-    if (!experimentId || !prolificId) {
-      setError('Missing experiment_id or PROLIFIC_PID in URL');
-      setLoading(false);
-      return;
-    }
-
-    api.startSession(experimentId, prolificId, studyId, sessionId)
-      .then(data => {
-        setSession(data);
-        return loadNextQuestion(data.rater_id);
-      })
-      .catch(err => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, [experimentId, prolificId]);
-
   const loadNextQuestion = useCallback(async (raterId: number) => {
     try {
       setLoading(true);
@@ -57,6 +39,24 @@ function RaterView() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!experimentId || !prolificId) {
+      setError('Missing experiment_id or PROLIFIC_PID in URL');
+      setLoading(false);
+      return;
+    }
+
+    api.startSession(experimentId, prolificId, studyId, sessionId)
+      .then(data => {
+        setSession(data);
+        return loadNextQuestion(data.rater_id);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [experimentId, prolificId, studyId, sessionId, loadNextQuestion]);
 
   const handleSubmit = async (answer: string, confidence: number, timeStarted: string) => {
     if (!session || !question) return;

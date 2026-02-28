@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import ExperimentDetail from './ExperimentDetail';
@@ -11,11 +11,7 @@ function ExperimentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadExperiment();
-  }, [experimentId]);
-
-  const loadExperiment = async () => {
+  const loadExperiment = useCallback(async () => {
     try {
       setLoading(true);
       const experiments = await api.listExperiments();
@@ -30,7 +26,11 @@ function ExperimentDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [experimentId]);
+
+  useEffect(() => {
+    loadExperiment();
+  }, [loadExperiment]);
 
   const handleBack = () => {
     navigate('/admin');

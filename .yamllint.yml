@@ -1,0 +1,17 @@
+extends: default
+
+ignore: |
+  .git/
+  .venv/
+  .claude/
+  frontend/node_modules/
+  backend/node_modules/
+  frontend/dist/
+
+rules:
+  document-start: disable
+  line-length:
+    max: 140
+    level: warning
+  truthy:
+    allowed-values: ["true", "false", "on", "off"]

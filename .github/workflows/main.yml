@@ -1,0 +1,122 @@
+name: ✅ CI Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-backend:
+    name: Lint Backend (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.28"
+          enable-cache: true
+
+      - name: Ruff check
+        run: uvx ruff==0.15.2 check backend
+
+      - name: Ruff format check
+        run: uvx ruff==0.15.2 format --check backend
+
+  lint-frontend:
+    name: Lint Frontend (eslint + tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: ESLint
+        run: npm --prefix frontend run lint
+
+      - name: Typecheck
+        run: npm --prefix frontend run typecheck
+
+  lint-yaml:
+    name: Lint YAML (yamllint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.28"
+          enable-cache: true
+
+      - name: Yamllint
+        run: uvx yamllint==1.38.0 .
+
+  test-characterization:
+    name: Characterization Tests (docker compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Run characterization tests
+        id: characterization
+        continue-on-error: true
+        env:
+          NO_COLOR: "1"
+          KEEP_TEST_STACK: "1"
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          make test 2>&1 | tee artifacts/characterization-output.txt
+
+      - name: Capture docker compose logs on failure
+        if: steps.characterization.outcome == 'failure'
+        run: |
+          docker compose --profile test ps -a > artifacts/compose-ps.txt || true
+          docker compose --profile test logs --no-color db migrate e2e > artifacts/compose-logs.txt || true
+
+      - name: Upload characterization artifacts on failure
+        if: steps.characterization.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: characterization-failure-artifacts
+          path: artifacts/
+
+      - name: Tear down test stack
+        if: always()
+        run: docker compose --profile test down --remove-orphans || true
+
+      - name: Fail if characterization tests failed
+        if: steps.characterization.outcome == 'failure'
+        run: exit 1
