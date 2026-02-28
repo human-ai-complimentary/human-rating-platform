@@ -1,46 +1,62 @@
-from sqlalchemy import create_engine, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-import os
+from __future__ import annotations
 
-# Get database URL from environment variable, or use SQLite as default
-DATABASE_URL = os.getenv("DATABASE_URL")
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-if DATABASE_URL:
-    # Handle various database URL formats
-    if DATABASE_URL.startswith("postgres://"):
-        # Render's postgres:// URL format (SQLAlchemy requires postgresql://)
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    elif DATABASE_URL.startswith("mysql://"):
-        # MySQL: use pymysql driver if not specified
-        DATABASE_URL = DATABASE_URL.replace("mysql://", "mysql+pymysql://", 1)
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-else:
-    # Default to SQLite for local development
-    # Use /data on Render (persistent disk), otherwise local data folder
-    if os.path.exists("/data"):
-        DATABASE_DIR = "/data"
-    else:
-        DATABASE_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-        os.makedirs(DATABASE_DIR, exist_ok=True)
+from fastapi import Request
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-    DATABASE_URL = f"sqlite:///{os.path.join(DATABASE_DIR, 'rating_platform.db')}"
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-    # Enable foreign key support for SQLite
-    @event.listens_for(engine, "connect")
-    def set_sqlite_pragma(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
+from config import Settings, get_settings
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class Database:
+    def __init__(self, settings: Settings):
+        self._settings = settings
+        self._engine: AsyncEngine | None = None
+        self._session_maker: async_sessionmaker[AsyncSession] | None = None
+
+    async def connect(self) -> None:
+        if self._engine is not None and self._session_maker is not None:
+            return
+
+        self._engine = create_async_engine(
+            self._settings.async_database_url,
+            pool_pre_ping=True,
+        )
+        self._session_maker = async_sessionmaker(
+            bind=self._engine,
+            class_=AsyncSession,
+            autocommit=False,
+            autoflush=False,
+            expire_on_commit=False,
+        )
+
+    async def disconnect(self) -> None:
+        if self._engine is None:
+            return
+        await self._engine.dispose()
+        self._engine = None
+        self._session_maker = None
+
+    @asynccontextmanager
+    async def session(self) -> AsyncIterator[AsyncSession]:
+        if self._session_maker is None:
+            raise RuntimeError("Database is not initialized. Ensure app lifespan startup has run.")
+        async with self._session_maker() as session:
+            yield session
+
+
+async def get_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    database: Database = request.app.state.database
+    async with database.session() as session:
+        yield session
+
+
+def build_database(settings: Settings | None = None) -> Database:
+    return Database(settings=settings or get_settings())

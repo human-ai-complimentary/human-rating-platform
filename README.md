@@ -1,172 +1,337 @@
 # Human Rating Platform
 
-A web platform for collecting human ratings on LLM responses, designed for use with Prolific.
+A web platform for collecting human ratings on LLM responses, designed for Prolific studies.
 
-## Features
+## How It Works
 
-- **Admin Panel**: Create experiments, upload questions via CSV, view analytics, export ratings
-- **Rater Interface**: Clean UI for rating questions with confidence scores and session timer
-- **Prolific Integration**: Automatic capture of Prolific IDs and redirect on completion
-- **Analytics**: Per-question and per-rater statistics with response time tracking
+An admin creates an experiment, uploads a CSV of questions, and shares a study URL
+with Prolific. Prolific participants (raters) open the link, rate questions one at a
+time, and are redirected to Prolific's completion page when done. The admin monitors
+progress, views analytics, and exports ratings as CSV.
 
-## Tech Stack
+The frontend is a React SPA. The backend is a FastAPI JSON API. They talk over `/api`.
+PostgreSQL stores everything. Alembic manages schema migrations.
 
-- **Backend**: Python FastAPI + SQLAlchemy
-- **Frontend**: React + TypeScript + Vite
-- **Database**: SQLite (local) or PostgreSQL/MySQL (production)
+## Project Layout
 
-## Local Development
+```text
+backend/              FastAPI app, models, services, migrations, tests
+  routers/            API route handlers (admin, raters)
+  services/           Business logic (admin/, rater/)
+  alembic/            Migration config + versions
+  scripts/            migrate.sh, predeploy.sh, seed_dev.py, config_check.py
+  config.toml         Default local settings
+frontend/             React + TypeScript + Vite SPA
+  src/api.ts          API client (route map, request pipeline, error handling)
+  src/components/     UI components (AdminView, RaterView, ExperimentDetail, etc.)
+scripts/              CI/deploy scripts (deploy.sh, resolve_deploy_target.sh)
+.github/workflows/    CI (main.yml) + deploy (deploy.yml)
+docker-compose.yml    Local dev stack (db + api + test runner)
+sample_questions.csv  Example CSV for testing uploads
+```
+
+## Stack
+
+- **Backend:** FastAPI + SQLModel (async), served on `:8000`
+- **Frontend:** React + TypeScript + Vite, served on `:5173`
+- **DB:** PostgreSQL, managed by Alembic migrations
+- **Config:** Pydantic Settings (`backend/config.toml` + `.env` + env vars)
+- **Python tooling:** `uv` / `uvx`
+
+---
+
+## Quick Start (~3 minutes)
 
 ### Prerequisites
 
-- Python 3.9+
-- Node.js 18+
+- Python 3.10+
+- Node.js 20+
+- Docker + Docker Compose (must be running)
 
-### Setup
+### 1) Initialize env files
 
-1. **Set up the backend**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-2. **Set up the frontend**
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-### Running Locally
-
-Start both servers separately:
-
-**Backend**:
 ```bash
-cd backend
-python -m uvicorn main:app --reload --port 8000
+make env.sync
 ```
 
-**Frontend**:
+Creates `backend/.env` and `frontend/.env` from their `.env.example` templates.
+
+### 2) Start backend + DB (Terminal A)
+
+```bash
+make up
+```
+
+This starts Postgres, runs migrations, and launches the API with hot reload.
+
+### 3) Start frontend (Terminal B)
+
 ```bash
 cd frontend
-npm run dev
+make up
 ```
 
-Access the app at the provided front end URL
+### 4) Open the app
+
+- **App:** http://localhost:5173
+- **API docs (Swagger):** http://localhost:8000/docs
+- **Health check:** http://localhost:8000/api/health
+
+---
+
+## Daily Commands
+
+```bash
+make up          # start db + migrations + api (hot reload)
+make ps          # show service status
+make logs        # follow db/api logs
+make test        # characterization tests (real db + migrations)
+make fmt         # format backend with ruff
+make down        # stop stack
+```
+
+DB lifecycle:
+
+```bash
+make db.up       # apply migrations
+make db.down     # rollback one revision (or set MIGRATION_REVISION=...)
+make db.new MIGRATION_NAME=add_new_column
+make db.reset    # destructive: wipe + rebuild from migrations
+make db.clear    # destructive: wipe local postgres volume
+make db.seed     # seed local data (disabled by default, see config.toml [seeding])
+```
+
+---
+
+## Migrations
+
+SQLModels in `backend/models.py` are the **declarative source of truth** — they describe what the database schema should look like. Migrations are **incremental operations** that get the database from its current state to match the models.
+
+This is the required workflow for schema changes:
+
+### 1) Change models
+
+Edit SQLModel definitions in `backend/models.py`. For new tables, add a new `SQLModel` class with `table=True`. For existing tables, modify the field definitions. Update related schemas and services as needed.
+
+### 2) Generate migration
+
+```bash
+make db.new MIGRATION_NAME=describe_change
+```
+
+Creates a timestamped file in `backend/alembic/versions/`.
+
+### 3) Review the migration file
+
+Always review the generated SQL/ops before applying. Autogenerate is helpful but not infallible.
+
+### 4) Apply + test
+
+```bash
+make db.up
+make test
+```
+
+### Roll back / inspect
+
+```bash
+make db.down                          # rollback one revision
+cd backend
+sh scripts/migrate.sh current         # show current revision
+sh scripts/migrate.sh history         # show full history
+```
+
+### If your local DB is stale or broken
+
+```bash
+make db.reset
+```
+
+> Migration history is squashed for v0. If you were on an older local schema, do `make db.reset` once.
+
+---
+
+## Configuration
+
+Backend settings are loaded via `backend/config.py` (`get_settings()`), with this precedence:
+
+1. Python init kwargs
+2. Process env vars
+3. `backend/.env`
+4. `backend/config.toml`
+5. Python defaults
+
+Env keys use Pydantic's nested `__` delimiter for nested settings models:
+
+- `APP__CORS_ORIGINS` — JSON array, e.g. `["http://localhost:5173","http://localhost:8000"]`
+- `DATABASE__URL` — Postgres connection string
+- `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
+- `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
+- `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
+
+Frontend env (`frontend/.env`):
+
+- `VITE_API_HOST` — optional API origin for cross-origin deployments
+  - **Local dev (default):** empty → frontend uses same-origin `/api` via Vite proxy
+  - **Render example:** `https://human-rating-platform-api-uxnt.onrender.com`
+
+---
+
+## Tailscale (optional)
+
+[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) gives your local machine a
+public `https://<machine>.<tailnet>.ts.net` URL. Use it to test a live Prolific study
+against your local stack — see real rater traffic in your terminal, iterate without
+deploying to Render.
+
+### Prerequisites
+
+- [Tailscale](https://tailscale.com/download) installed and authenticated
+- Funnel enabled for your tailnet ([setup guide](https://tailscale.com/kb/1223/funnel))
+
+### Usage
+
+```bash
+make tailscale.up       # expose / → frontend, /api → backend
+make tailscale.status   # show current Funnel URLs
+make tailscale.down     # tear down
+```
+
+After `make tailscale.up`, use the `*.ts.net` URL as your study URL in Prolific.
+Your local `make up` + `cd frontend && make up` stack serves traffic as-is — no
+config changes needed.
+
+---
+
+## Render Deployment
+
+Deploys are GitHub-driven and API-triggered (Render auto-deploy is off):
+
+- `human-rating-platform-web` — static frontend
+- `human-rating-platform-api` — FastAPI backend
+- `human-rating-platform-db` — Postgres
+
+### Backend runtime on Render
+
+- **Build:** `uv sync --frozen --no-dev --no-install-project`
+- **Predeploy:** `sh scripts/predeploy.sh`
+- **Start:** `uv run --no-sync uvicorn main:app --host 0.0.0.0 --port $PORT`
+
+### Required GitHub Actions secrets
+
+Set in repo → **Settings** → **Secrets and variables** → **Actions**:
+
+| Secret | Where to find it |
+| --- | --- |
+| `RENDER_API_KEY` | Render Dashboard → Account Settings → API Keys |
+| `RENDER_API_SERVICE_ID` | Render Dashboard → API service → Settings → ID (`srv-...`) |
+| `RENDER_WEB_SERVICE_ID` | Render Dashboard → Web service → Settings → ID (`srv-...`) |
+
+### Required Render service env vars
+
+**API service** (set in Render Dashboard → API service → Environment):
+- `DATABASE__URL` — Render Postgres internal connection string
+- `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
+
+**Web service** (set in Render Dashboard → Web service → Environment):
+- `VITE_API_HOST` — public API origin, e.g. `https://human-rating-platform-api-uxnt.onrender.com`
+
+### Deploy flow
+
+1. CI workflow (`✅ CI Checks`) runs lint + characterization tests.
+2. Deploy workflow (`🚀 Deploy Render`) gates on CI success for the same SHA.
+3. Target resolution (`api`, `web`, `both`, `none`) is handled by `scripts/resolve_deploy_target.sh`.
+4. Deploy execution and polling is handled by `scripts/deploy.sh`.
+5. Deploys are commit-pinned — Render builds the exact SHA that passed CI.
+
+### Quick verification
+
+1. Trigger deploy (push to deploy branch, or manual dispatch).
+2. Check workflow summary for expected target.
+3. Verify web app network requests hit `.../api/...`.
+4. Hit health check: `https://<api-host>/api/health`.
+
+---
+
+## CI Checks (local)
+
+Run these locally to match what CI enforces:
+
+```bash
+uvx ruff==0.15.2 check backend
+uvx ruff==0.15.2 format --check backend
+npm --prefix frontend run lint
+npm --prefix frontend run typecheck
+uvx yamllint==1.38.0 .
+```
+
+---
 
 ## CSV Format
 
-Upload questions using a CSV file with the following columns:
+Upload questions as CSV. See `sample_questions.csv` for a working example.
 
 | Column | Required | Description |
-|--------|----------|-------------|
-| `question_id` | Yes | Unique identifier for the question |
-| `question_text` | Yes | The question text to display |
-| `gt_answer` | No | Ground truth answer (for export/analysis) |
-| `options` | No | Comma-separated options for multiple choice |
-| `question_type` | No | `MC` (multiple choice) or `FT` (free text). Default: `MC` |
-| `metadata` | No | JSON string with additional data |
+| --- | --- | --- |
+| `question_id` | Yes | Unique identifier |
+| `question_text` | Yes | Prompt shown to raters |
+| `gt_answer` | No | Ground-truth answer |
+| `options` | No | Comma-separated options for MC |
+| `question_type` | No | `MC` or `FT` (default `MC`) |
+| `metadata` | No | JSON string |
 
-Example:
 ```csv
 question_id,question_text,gt_answer,options,question_type
 q1,"Is the sky blue?","Yes","Yes,No,Maybe",MC
 q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 ```
 
+---
+
 ## Prolific Integration
 
-1. Create your experiment in the admin panel
-2. Copy the **Study URL** from the experiment settings
-3. In Prolific, paste this URL as your study URL
-4. Set the **Completion URL** in your experiment settings (get this from Prolific)
+1. **Create an experiment** in the admin UI (`/admin`).
+2. **Upload questions** via CSV.
+3. **Copy the study URL** from the experiment detail page in the admin UI.
+4. **Paste it into Prolific** as the external study URL (Prolific Dashboard → Study → Study Link).
+5. **Set the completion URL** in the experiment's settings in the admin UI — this is where raters are redirected after finishing.
 
-The Study URL format:
-```
+Study URL format (Prolific fills in the `{{...}}` placeholders):
+
+```text
 https://your-app.com/rate?experiment_id=1&PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}
 ```
 
-## Deployment to Render
-
-This app deploys as two separate services on Render:
-
-### 1. Backend (Web Service)
-
-1. Create a new **Web Service** on Render
-2. Connect your GitHub repository
-3. Configure:
-   - **Name**: `human-rating-platform-api`
-   - **Root Directory**: `backend`
-   - **Runtime**: Python
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-
-4. Add environment variables:
-   | Variable | Description |
-   |----------|-------------|
-   | `DATABASE_URL` | Database connection string (optional, defaults to SQLite) |
-   | `CORS_ORIGINS` | Frontend URL, e.g., `https://your-frontend.onrender.com` |
-
-5. If using SQLite, add a **Disk** for persistent storage:
-   - Mount path: `/data`
-
-### 2. Frontend (Static Site)
-
-1. Create a new **Static Site** on Render
-2. Connect the same GitHub repository
-3. Configure:
-   - **Name**: `human-rating-platform`
-   - **Root Directory**: `frontend`
-   - **Build Command**: `npm install && npm run build`
-   - **Publish Directory**: `dist`
-
-4. Add environment variable:
-   | Variable | Description |
-   |----------|-------------|
-   | `VITE_API_URL` | Backend URL, e.g., `https://human-rating-platform-api.onrender.com` |
-
-5. Add a **Rewrite Rule** for SPA routing:
-   - **Source**: `/*`
-   - **Destination**: `/index.html`
-   - **Action**: Rewrite
-
-### 3. Update CORS
-
-After both services are deployed, update the backend's `CORS_ORIGINS` environment variable with your frontend URL.
-
-## Environment Variables
-
-### Backend
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | SQLite in `/data` | Database connection string |
-| `CORS_ORIGINS` | `*` | Allowed origins (comma-separated) |
-
-### Frontend
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VITE_API_URL` | (empty) | Backend API URL |
+---
 
 ## API Endpoints
 
+Interactive Swagger docs are available at `/docs` when the backend is running.
+
 ### Admin
 
-- `POST /api/admin/experiments` - Create experiment
-- `GET /api/admin/experiments` - List experiments
-- `POST /api/admin/experiments/{id}/upload` - Upload questions CSV
-- `GET /api/admin/experiments/{id}/stats` - Get experiment stats
-- `GET /api/admin/experiments/{id}/analytics` - Get detailed analytics
-- `GET /api/admin/experiments/{id}/export` - Export ratings as CSV
-- `DELETE /api/admin/experiments/{id}` - Delete experiment
+- `POST /api/admin/experiments` — create experiment
+- `GET /api/admin/experiments` — list experiments
+- `POST /api/admin/experiments/{id}/upload` — upload question CSV
+- `GET /api/admin/experiments/{id}/stats` — experiment statistics
+- `GET /api/admin/experiments/{id}/analytics` — rating analytics
+- `GET /api/admin/experiments/{id}/export` — export ratings as CSV
+- `DELETE /api/admin/experiments/{id}` — delete experiment
 
 ### Rater
 
-- `POST /api/raters/start` - Start rating session
-- `GET /api/raters/next-question` - Get next question
-- `POST /api/raters/submit` - Submit rating
-- `GET /api/raters/session-status` - Check session status
+- `POST /api/raters/start` — start rating session
+- `GET /api/raters/next-question` — get next question
+- `POST /api/raters/submit` — submit a rating
+- `GET /api/raters/session-status` — check session status
+- `POST /api/raters/end-session` — end session
+
+---
+
+## Supported Targets
+
+- **Local runtime:** Docker Compose
+- **Hosted deployment:** Render, via GitHub Actions + Render API (`scripts/deploy.sh`)
 
 ## License
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import Analytics from './Analytics';
 import type { Experiment, ExperimentStats, Upload } from '../types';
@@ -45,28 +45,28 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
     setTimeout(() => setSuccess(null), 2000);
   };
 
-  useEffect(() => {
-    loadStats();
-    loadUploads();
-  }, [experiment.id]);
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       const data = await api.getExperimentStats(experiment.id);
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     }
-  };
+  }, [experiment.id]);
 
-  const loadUploads = async () => {
+  const loadUploads = useCallback(async () => {
     try {
       const data = await api.listUploads(experiment.id);
       setUploads(data);
     } catch {
       // Ignore errors for uploads list
     }
-  };
+  }, [experiment.id]);
+
+  useEffect(() => {
+    loadStats();
+    loadUploads();
+  }, [loadStats, loadUploads]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();

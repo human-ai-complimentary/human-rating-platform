@@ -1,7 +1,0 @@
-fastapi>=0.115.0
-uvicorn>=0.34.0
-sqlalchemy>=2.0.25
-python-multipart>=0.0.6
-pydantic>=2.5.3
-aiofiles>=23.0.0
-pymysql>=1.1.0
