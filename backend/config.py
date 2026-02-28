@@ -96,6 +96,7 @@ class Settings(BaseSettings):
     seeding: SeedingSettings = Field(default_factory=SeedingSettings)
 
     # Admin/session config (mapped from flat env vars for ergonomics)
+    admin_auth_enabled: bool = Field(default=True)
     admin_allowlist: Annotated[list[str], NoDecode] = Field(
         default_factory=list,
         description="Comma-separated list of allowlisted admin emails.",

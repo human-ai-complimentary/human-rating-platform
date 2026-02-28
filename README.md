@@ -241,6 +241,7 @@ Top‑level convenience envs (not nested):
 - `ADMIN_ALLOWLIST` — comma‑separated or JSON array of admin emails
 - `APP_SECRET_KEY` — HMAC signer for the HTTP‑only admin session cookie
 - `HRP_SESSION_COOKIE`, `HRP_SESSION_MAX_AGE`, `COOKIE_SECURE` — cookie name/ttl/secure flag
+ - `ADMIN_AUTH_ENABLED` — set to `false` to bypass admin auth in dev/tests
 
 Frontend env (`frontend/.env`):
 

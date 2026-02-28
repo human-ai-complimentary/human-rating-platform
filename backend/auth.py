@@ -113,6 +113,10 @@ async def require_admin(
     settings: Settings = Depends(get_settings),
     manager: AdminSessionManager = Depends(get_admin_manager),
 ) -> AdminSession:
+    # Allow bypass in test/dev when explicitly disabled
+    if not settings.admin_auth_enabled:
+        return AdminSession(email="dev@local", issued_at=0)
+
     session = manager.get_session(request)
     if not session:
         raise HTTPException(status_code=403, detail="Admin session required")
