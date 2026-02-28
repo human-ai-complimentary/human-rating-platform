@@ -87,7 +87,10 @@ class AdminSessionManager:
             max_age=self._settings.hrp_session_max_age,
             httponly=True,
             secure=self._settings.cookie_secure,
-            samesite="lax",
+            # In Render, frontend and backend are different origins. Use
+            # SameSite=None so the browser includes the cookie on cross-site
+            # requests when credentials: 'include' is set.
+            samesite="none",
             path="/",
         )
 
@@ -120,4 +123,3 @@ async def require_admin(
         raise HTTPException(status_code=403, detail="Not allowlisted for admin access")
 
     return session
-
