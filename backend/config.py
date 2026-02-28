@@ -84,6 +84,7 @@ class ClerkSettings(_StrictModel):
     issuer: str = ""
     jwks_url: str = ""
     template: str = "admin"
+    audience: str = "human-rating-platform-admin-api"
 
 
 class SeedingSettings(_StrictModel):

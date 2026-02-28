@@ -17,7 +17,8 @@ async def verify_clerk_token_and_get_email(token: str, settings: Settings) -> st
     """
     issuer = (settings.clerk.issuer or "").strip()
     jwks_url = (settings.clerk.jwks_url or "").strip()
-    if not issuer or not jwks_url:
+    audience = (settings.clerk.audience or "").strip()
+    if not issuer or not jwks_url or not audience:
         raise HTTPException(status_code=500, detail="Clerk configuration is missing")
 
     try:
@@ -28,7 +29,7 @@ async def verify_clerk_token_and_get_email(token: str, settings: Settings) -> st
             signing_key,
             algorithms=["RS256"],
             issuer=issuer,
-            options={"verify_aud": False},
+            audience=audience,
         )
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token signature or claims")
