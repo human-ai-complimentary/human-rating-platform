@@ -17,7 +17,10 @@ secure_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends
 
 
 @router.post("/auth/login")
-async def admin_login(request: Request, manager=Depends(get_admin_manager)):
+async def admin_login(
+    request: Request,
+    manager=Depends(get_admin_manager),
+):
     # Require a Clerk session token via Authorization: Bearer <token>
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth or not auth.lower().startswith("bearer "):

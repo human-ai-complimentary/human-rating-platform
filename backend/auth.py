@@ -35,16 +35,17 @@ def _sign(secret: str, payload: str) -> str:
 
 
 class AdminSession:
-    def __init__(self, email: str, issued_at: int):
+    def __init__(self, email: str, issued_at: int, expires_at: int | None = None):
         self.email = email
         self.issued_at = issued_at
+        self.expires_at = expires_at
 
 
 class AdminSessionManager:
     """Lightweight, stateless, signed session cookie for admin access.
 
     Cookie format: v1.<payload>.<signature>
-      - payload: base64url({"email": str, "iat": int})
+      - payload: base64url({"email": str, "iat": int, "exp": int})
       - signature: base64url(HMAC_SHA256(secret, payload))
     """
 
@@ -58,7 +59,9 @@ class AdminSessionManager:
         return self._settings.hrp_session_cookie
 
     def _encode(self, email: str) -> str:
-        payload = _b64url_json({"email": email, "iat": int(time.time())})
+        now = int(time.time())
+        exp = now + int(self._settings.hrp_session_max_age)
+        payload = _b64url_json({"email": email, "iat": now, "exp": exp})
         sig = _sign(self._settings.app_secret_key, payload)
         return f"{self.VERSION}.{payload}.{sig}"
 
@@ -74,10 +77,20 @@ class AdminSessionManager:
             return None
         data = _unb64url_json(payload)
         email = data.get("email")
-        iat = int(data.get("iat", 0))
+        iat = data.get("iat")
+        exp = data.get("exp")
         if not isinstance(email, str) or not email:
             return None
-        return AdminSession(email=email, issued_at=iat)
+        try:
+            iat = int(iat)
+            exp = int(exp)
+        except Exception:
+            return None
+        # Enforce server-side expiration regardless of browser cookie behavior
+        now = int(time.time())
+        if now > exp:
+            return None
+        return AdminSession(email=email, issued_at=iat, expires_at=exp)
 
     def set_cookie(self, response: Response, email: str) -> None:
         value = self._encode(email)
