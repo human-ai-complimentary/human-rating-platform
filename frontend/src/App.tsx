@@ -99,6 +99,8 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   const { getToken } = useAuth();
   const [state, setState] = React.useState<'idle' | 'loading' | 'ok' | 'forbidden' | 'error'>('idle');
   const [message, setMessage] = React.useState<string>('');
+  // Allow overriding the Clerk JWT template via env; default to 'admin'.
+  const ADMIN_JWT_TEMPLATE = (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) || 'admin';
 
   React.useEffect(() => {
     if (!isLoaded) return; // wait for Clerk to load
@@ -111,7 +113,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     (async () => {
       setState('loading');
       try {
-        const token = await getToken({ template: 'admin' });
+        const token = await getToken({ template: ADMIN_JWT_TEMPLATE });
         if (!token) {
           throw new Error('Missing Clerk session token');
         }

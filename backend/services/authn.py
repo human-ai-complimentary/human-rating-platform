@@ -11,9 +11,9 @@ async def verify_clerk_token_and_get_email(token: str, settings: Settings) -> st
     """Verify a Clerk-issued JWT and return the embedded email claim.
 
     Security:
-    - Uses JWKS via PyJWKClient to resolve signing key
-    - Enforces issuer from settings.clerk.issuer
-    - Skips audience verification (Clerk custom JWTs may omit it)
+    - Resolves signing key via Clerk JWKS (kid → JWK → key)
+    - Enforces both issuer and audience from settings.clerk
+    - Uses RS256; rejects invalid signature or claims
     """
     issuer = (settings.clerk.issuer or "").strip()
     jwks_url = (settings.clerk.jwks_url or "").strip()

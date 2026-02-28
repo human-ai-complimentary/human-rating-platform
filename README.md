@@ -45,14 +45,33 @@ sample_questions.csv  Example CSV for testing uploads
 This project uses Clerk for frontend identity and a backend HTTP‑only cookie for invite‑only admin access.
 
 - Frontend (Clerk): The React app is wrapped with `ClerkProvider` and uses prebuilt components for sign‑in/sign‑up. Configure with a publishable key.
-- Backend (allowlist + session): After Clerk sign‑in, the frontend calls `POST /api/admin/auth/login` with the user email. The backend checks an env‑based allowlist and issues a signed HTTP‑only cookie that unlocks `/api/admin/*` routes. Signing out clears the cookie.
+- Backend (allowlist + session): After Clerk sign‑in, the frontend calls `POST /api/admin/auth/login` with `Authorization: Bearer <Clerk JWT (template=admin)>`. The backend verifies the JWT against Clerk JWKS, enforces issuer and audience, extracts the email from claims, checks an env‑based allowlist, and issues a signed HTTP‑only cookie that unlocks `/api/admin/*` routes. Signing out clears the cookie.
 
 ### Cookie model
 
 - Name: `HRP_SESSION_COOKIE` (default `hrp_session`)
-- Scope: `Path=/`, `HttpOnly`, `SameSite=None`, `Secure` (set `COOKIE_SECURE=true` in production)
-- Contents: a compact HMAC‑signed token with `{ email, iat }`. No server‑side store is required.
-- Usage: The frontend sends requests with `credentials: 'include'`, so the browser includes the cookie on `/api` calls. All `/api/admin/*` routes validate the cookie signature and re‑check the email against `ADMIN_ALLOWLIST` at each request.
+- Scope: `Path=/`, `HttpOnly`; SameSite depends on env — `Lax` in local dev, `None; Secure` in production (`COOKIE_SECURE=true`).
+- Contents: a compact HMAC‑signed token with `{ email, iat, exp }`. No server‑side store is required.
+- Validation: The server validates the signature and enforces `exp` on every request (session expires server‑side regardless of browser cookie TTL) and re‑checks the email against `ADMIN_ALLOWLIST`.
+- Usage: The frontend sends requests with `credentials: 'include'`, so the browser includes the cookie on `/api` calls.
+
+### Clerk Configuration
+
+- Backend env (nested keys as configured in `config.py`):
+  - `CLERK__ISSUER`: your Clerk issuer URL (e.g., `https://<your-tenant>.clerk.accounts.dev`).
+  - `CLERK__JWKS_URL`: `https://<your-tenant>.clerk.accounts.dev/.well-known/jwks.json`.
+  - `CLERK__AUDIENCE`: audience string set in your Clerk JWT template (e.g., `human-rating-platform-admin-api`).
+  - `CLERK__TEMPLATE` (optional): template name used by the frontend when calling `getToken` (default `admin`).
+- Clerk JWT template (Dashboard → JWT Templates):
+  - Name: `admin` (or set `CLERK__TEMPLATE` accordingly)
+  - Claims JSON:
+    ```json
+    { "email": "{{user.primary_email_address}}" }
+    ```
+  - Audience: set to match `CLERK__AUDIENCE`.
+  - Issuer/JWKS: the values above are auto-derived by Clerk; copy them into backend env.
+- Frontend usage:
+  - Retrieve token with `useAuth().getToken({ template: 'admin' })` and send `Authorization: Bearer <token>` to `/api/admin/auth/login`.
 
 ### Allowlist
 
