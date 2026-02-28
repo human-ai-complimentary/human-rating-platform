@@ -59,6 +59,8 @@ const routes = {
     stats: (id: number) => `/admin/experiments/${id}/stats`,
     analytics: (id: number) => `/admin/experiments/${id}/analytics`,
     export: (id: number) => `/admin/experiments/${id}/export`,
+    authLogin: '/admin/auth/login',
+    authLogout: '/admin/auth/logout',
   },
   rater: {
     start: '/raters/start',
@@ -204,7 +206,7 @@ async function request(
     throw new Error('Invalid request options: provide either json or formData, not both.');
   }
 
-  const init: RequestInit = { method };
+  const init: RequestInit = { method, credentials: 'include' };
 
   if (formData !== undefined) {
     init.body = formData;
@@ -232,6 +234,19 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
 
 export const api = {
   // ── Admin ────────────────────────────────────────────────────────────────
+
+  async adminLogin(email: string): Promise<{ ok: boolean } | MessageResponse> {
+    return requestJson<{ ok: boolean } | MessageResponse>(routes.admin.authLogin, {
+      method: 'POST',
+      json: { email },
+    });
+  },
+
+  async adminLogout(): Promise<{ ok: boolean } | MessageResponse> {
+    return requestJson<{ ok: boolean } | MessageResponse>(routes.admin.authLogout, {
+      method: 'POST',
+    });
+  },
 
   async createExperiment(data: ExperimentCreate): Promise<Experiment> {
     return requestJson<Experiment>(routes.admin.experiments, {

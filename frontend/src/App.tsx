@@ -1,12 +1,24 @@
+import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser, UserButton } from '@clerk/clerk-react';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
+import { api } from './api';
 
 function App() {
   return (
     <>
+      {/* Minimal header with account menu when signed in */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 12 }}>
+        <SignedIn>
+          <UserButton afterSignOutUrl="/" />
+        </SignedIn>
+        <SignedOut>
+          {/* When Clerk signs out, also clear the backend admin cookie */}
+          <BackendLogoutOnSignedOut />
+        </SignedOut>
+      </div>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/rate" element={<RaterView />} />
@@ -15,7 +27,7 @@ function App() {
           element={
             <>
               <SignedIn>
-                <AdminView />
+                <AdminPage />
               </SignedIn>
               <SignedOut>
                 <RequireSignIn message="You must sign in to access the admin panel." />
@@ -28,7 +40,9 @@ function App() {
           element={
             <>
               <SignedIn>
-                <ExperimentDetailPage />
+                <AdminPage>
+                  <ExperimentDetailPage />
+                </AdminPage>
               </SignedIn>
               <SignedOut>
                 <RequireSignIn message="You must sign in to access this page." />
@@ -78,6 +92,95 @@ function RequireSignIn({ message }: { message: string }) {
       </div>
     </div>
   );
+}
+
+function AdminPage({ children }: { children?: React.ReactNode }) {
+  const { isLoaded, isSignedIn, user } = useUser();
+  const [state, setState] = React.useState<'idle' | 'loading' | 'ok' | 'forbidden' | 'error'>('idle');
+  const [message, setMessage] = React.useState<string>('');
+
+  React.useEffect(() => {
+    if (!isLoaded) return; // wait for Clerk to load
+    if (!isSignedIn) return; // SignedOut wrapper handles this
+
+    let cancelled = false;
+    const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
+    if (!email) return;
+
+    (async () => {
+      setState('loading');
+      try {
+        const resp = await api.adminLogin(email);
+        if (cancelled) return;
+        if ((resp as any).ok === true) {
+          setState('ok');
+        } else {
+          const msg = (resp as any)?.message || 'Access denied';
+          if (msg.toLowerCase().includes('forbidden') || msg.toLowerCase().includes('allowlist')) {
+            setState('forbidden');
+            setMessage(msg);
+          } else {
+            setState('ok');
+          }
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        const msg = err?.message || 'Failed to create admin session';
+        if (msg.includes('403')) {
+          setState('forbidden');
+          setMessage('You are not allowed to access the admin panel.');
+        } else {
+          setState('error');
+          setMessage(msg);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress]);
+
+  if (!isLoaded || state === 'loading' || state === 'idle') {
+    return (
+      <div className="container">
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p>Preparing admin session…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'forbidden') {
+    return (
+      <div className="container">
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: 20, marginBottom: 8 }}>You don’t have admin access.</p>
+          <p style={{ color: '#666', margin: 0 }}>Please contact Juliana, Andrew, or Sander to have your email added to the allowlist.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="container">
+        <div className="card" style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: 20, marginBottom: 16 }}>Error preparing admin session.</p>
+          <p style={{ color: '#666' }}>{message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children ?? <AdminView />}</>;
+}
+
+function BackendLogoutOnSignedOut() {
+  React.useEffect(() => {
+    void api.adminLogout().catch(() => {});
+  }, []);
+  return null;
 }
 
 export default App;

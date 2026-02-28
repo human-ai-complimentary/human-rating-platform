@@ -95,6 +95,19 @@ class Settings(BaseSettings):
     testing: TestingSettings = Field(default_factory=TestingSettings)
     seeding: SeedingSettings = Field(default_factory=SeedingSettings)
 
+    # Admin/session config (mapped from flat env vars for ergonomics)
+    admin_allowlist: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        description="Comma-separated list of allowlisted admin emails.",
+    )
+    app_secret_key: str = Field(
+        default="please-change-me-to-a-long-random-string",
+        description="Secret for signing the HTTP-only admin session cookie.",
+    )
+    hrp_session_cookie: str = Field(default="hrp_session")
+    hrp_session_max_age: int = Field(default=60 * 60 * 24 * 7)  # 7 days
+    cookie_secure: bool = Field(default=False)
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
@@ -121,6 +134,26 @@ class Settings(BaseSettings):
             TomlConfigSettingsSource(settings_cls),
             file_secret_settings,
         )
+
+    @field_validator("admin_allowlist", mode="before")
+    @classmethod
+    def parse_admin_allowlist(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            # Allow JSON array or comma-separated string
+            value = value.strip()
+            if value.startswith("["):
+                try:
+                    arr = json.loads(value)
+                    if isinstance(arr, list):
+                        return [str(x).strip() for x in arr if str(x).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+        return []
 
     @property
     def sync_database_url(self) -> str:

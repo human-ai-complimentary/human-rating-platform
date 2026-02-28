@@ -1,17 +1,47 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Query, UploadFile, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_session
 from schemas import ExperimentCreate, ExperimentResponse
 from services import admin as admin_service
+from auth import require_admin, get_admin_manager
 
+# Public admin router (for auth endpoints)
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+# Secure router for admin-only endpoints
+secure_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
-@router.post("/experiments", response_model=ExperimentResponse)
+
+@router.post("/auth/login")
+async def admin_login(payload: dict, manager=Depends(get_admin_manager)):
+    email = (payload or {}).get("email")
+    if not isinstance(email, str) or not email.strip():
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    from config import get_settings
+
+    settings = get_settings()
+    allow = {e.strip().lower() for e in settings.admin_allowlist}
+    if email.strip().lower() not in allow:
+        return JSONResponse(status_code=403, content={"message": "Email is not allowlisted"})
+
+    resp = JSONResponse({"ok": True})
+    manager.set_cookie(resp, email.strip())
+    return resp
+
+
+@router.post("/auth/logout")
+async def admin_logout(manager=Depends(get_admin_manager)):
+    resp = JSONResponse({"ok": True})
+    manager.clear_cookie(resp)
+    return resp
+
+
+@secure_router.post("/experiments", response_model=ExperimentResponse)
 async def create_experiment(
     experiment: ExperimentCreate,
     db: AsyncSession = Depends(get_session),
@@ -19,7 +49,7 @@ async def create_experiment(
     return await admin_service.create_experiment(experiment, db)
 
 
-@router.get("/experiments", response_model=list[ExperimentResponse])
+@secure_router.get("/experiments", response_model=list[ExperimentResponse])
 async def list_experiments(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -28,7 +58,7 @@ async def list_experiments(
     return await admin_service.list_experiments(skip=skip, limit=limit, db=db)
 
 
-@router.post("/experiments/{experiment_id}/upload")
+@secure_router.post("/experiments/{experiment_id}/upload")
 async def upload_questions(
     experiment_id: int,
     file: UploadFile = File(...),
@@ -41,7 +71,7 @@ async def upload_questions(
     )
 
 
-@router.get("/experiments/{experiment_id}/uploads")
+@secure_router.get("/experiments/{experiment_id}/uploads")
 async def list_uploads(
     experiment_id: int,
     skip: int = Query(0, ge=0),
@@ -56,7 +86,7 @@ async def list_uploads(
     )
 
 
-@router.get("/experiments/{experiment_id}/export")
+@secure_router.get("/experiments/{experiment_id}/export")
 async def export_ratings(
     experiment_id: int,
     db: AsyncSession = Depends(get_session),
@@ -72,7 +102,7 @@ async def export_ratings(
     )
 
 
-@router.delete("/experiments/{experiment_id}")
+@secure_router.delete("/experiments/{experiment_id}")
 async def delete_experiment(
     experiment_id: int,
     db: AsyncSession = Depends(get_session),
@@ -80,7 +110,7 @@ async def delete_experiment(
     return await admin_service.delete_experiment(experiment_id=experiment_id, db=db)
 
 
-@router.get("/experiments/{experiment_id}/stats")
+@secure_router.get("/experiments/{experiment_id}/stats")
 async def get_experiment_stats(
     experiment_id: int,
     db: AsyncSession = Depends(get_session),
@@ -88,7 +118,7 @@ async def get_experiment_stats(
     return await admin_service.get_experiment_stats(experiment_id=experiment_id, db=db)
 
 
-@router.get("/experiments/{experiment_id}/analytics")
+@secure_router.get("/experiments/{experiment_id}/analytics")
 async def get_experiment_analytics(
     experiment_id: int,
     db: AsyncSession = Depends(get_session),
