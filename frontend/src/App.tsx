@@ -149,38 +149,44 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress, getToken]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
-    return (
-      <div className="container">
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p>Preparing admin session…</p>
-        </div>
-      </div>
-    );
+    return <InfoCard title="Preparing admin session…" />;
   }
 
   if (state === 'forbidden') {
     return (
-      <div className="container">
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: 20, marginBottom: 8 }}>You don’t have admin access.</p>
-          <p style={{ color: '#666', margin: 0 }}>Please contact Juliana, Andrew, or Sander to have your email added to the allowlist.</p>
-        </div>
-      </div>
+      <InfoCard
+        title="You don’t have admin access."
+        body="Please contact Juliana, Andrew, or Sander to have your email added to the allowlist."
+      />
     );
   }
 
   if (state === 'error') {
-    return (
-      <div className="container">
-        <div className="card" style={{ textAlign: 'center' }}>
-          <p style={{ fontSize: 20, marginBottom: 16 }}>Error preparing admin session.</p>
-          <p style={{ color: '#666' }}>{message}</p>
-        </div>
-      </div>
-    );
+    return <InfoCard title="Error preparing admin session." body={message} />;
   }
 
   return <>{children ?? <AdminView />}</>;
+}
+
+type InfoCardProps = {
+  title: string;
+  body?: string;
+  align?: React.CSSProperties['textAlign'];
+};
+
+function InfoCard({ title, body, align = 'center' }: InfoCardProps) {
+  return (
+    <div className="container">
+      <div className="card" style={{ textAlign: align }}>
+        <p style={{ fontSize: 20, marginBottom: body ? 8 : 0 }}>{title}</p>
+        {body && (
+          <p style={{ color: '#666', margin: 0 }}>
+            {body}
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function BackendLogoutOnSignedOut() {
