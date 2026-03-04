@@ -51,6 +51,7 @@ def test_allowlisted_login_sets_cookie_and_unlocks_admin_routes(
         admin_auth_enabled=True,
         allowlist="admin@example.com",
     ) as client:
+
         async def fake_clerk_email_from_request() -> str:
             return "admin@example.com"
 
@@ -80,6 +81,7 @@ def test_non_allowlisted_email_is_denied_and_cookie_not_set(
         admin_auth_enabled=True,
         allowlist="admin@example.com",
     ) as client:
+
         async def fake_clerk_email_from_request() -> str:
             return "other@example.com"
 
@@ -104,6 +106,7 @@ def test_tampered_cookie_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         admin_auth_enabled=True,
         allowlist="admin@example.com",
     ) as client:
+
         async def fake_clerk_email_from_request() -> str:
             return "admin@example.com"
 
@@ -129,4 +132,3 @@ def test_tampered_cookie_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
         response = client.get("/api/admin/experiments")
         assert response.status_code == 403
         assert response.json()["detail"] == "Admin session required"
-
