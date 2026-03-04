@@ -13,18 +13,19 @@ function Analytics({ experimentId, experimentName, onBack }: AnalyticsProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'questions' | 'raters'>('overview');
+  const [includePreview, setIncludePreview] = useState(false);
 
   const loadAnalytics = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await api.getExperimentAnalytics(experimentId);
+      const data = await api.getExperimentAnalytics(experimentId, { includePreview });
       setAnalytics(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
-  }, [experimentId]);
+  }, [experimentId, includePreview]);
 
   useEffect(() => {
     loadAnalytics();
@@ -73,7 +74,6 @@ function Analytics({ experimentId, experimentName, onBack }: AnalyticsProps) {
     tabs: {
       display: 'flex',
       gap: '4px',
-      marginBottom: '24px',
       background: '#f0f0f0',
       padding: '4px',
       borderRadius: '8px',
@@ -220,20 +220,52 @@ function Analytics({ experimentId, experimentName, onBack }: AnalyticsProps) {
         <h1 style={styles.title}>Analytics: {experimentName}</h1>
       </div>
 
-      {/* Tabs */}
-      <div style={styles.tabs}>
-        {(['overview', 'questions', 'raters'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              ...styles.tab,
-              ...(activeTab === tab ? styles.tabActive : {}),
-            }}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
+      {/* Tabs + Filters */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div style={styles.tabs}>
+          {(['overview', 'questions', 'raters'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                ...styles.tab,
+                ...(activeTab === tab ? styles.tabActive : {}),
+              }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '13px', color: '#666' }}>Include preview data</span>
+          <div style={{ position: 'relative' as const, width: '44px', height: '24px', flexShrink: 0 }}>
+            <div
+              style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                background: includePreview ? '#4a90d9' : '#ddd',
+              }}
+              onClick={() => setIncludePreview(!includePreview)}
+            />
+            <div
+              style={{
+                position: 'absolute' as const,
+                top: '2px',
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                transition: 'left 0.2s',
+                left: includePreview ? '22px' : '2px',
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Overview Tab */}

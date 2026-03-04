@@ -54,6 +54,7 @@ async def start_session(
     prolific_pid: str,
     study_id: Optional[str],
     session_id: Optional[str],
+    is_preview: bool = False,
     db: AsyncSession,
 ) -> RaterStartResponse:
     experiment = await fetch_experiment_or_404(experiment_id, db)
@@ -80,6 +81,7 @@ async def start_session(
         experiment_id=experiment_id,
         session_start=datetime.now(UTC),
         is_active=True,
+        is_preview=is_preview,
     )
     db.add(rater)
     await db.commit()

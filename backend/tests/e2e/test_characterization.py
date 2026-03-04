@@ -9,7 +9,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+import respx
 from fastapi.testclient import TestClient
+from httpx import Response
 from sqlalchemy import text
 
 from config import get_settings
@@ -473,3 +476,156 @@ def test_app_creation_succeeds_with_default_env():
 
     assert result.returncode == 0
     assert "ok" in result.stdout
+
+
+# ── Prolific integration tests ──────────────────────────────────────────────
+# These use respx to mock outbound httpx calls to the Prolific API, verifying
+# the full path: TestClient → FastAPI → service → Prolific client → mock.
+
+PROLIFIC_BASE = "https://api.prolific.com/api/v1"
+FAKE_STUDY_ID = "65abc123def456"
+
+
+@pytest.fixture()
+def enable_prolific():
+    """Temporarily enable Prolific by setting an API token on the cached settings."""
+    settings = get_settings()
+    original = settings.prolific.api_token
+    settings.prolific.api_token = "test-token"
+    yield settings
+    settings.prolific.api_token = original
+
+
+def _prolific_experiment_payload() -> dict:
+    return {
+        "name": _unique_name("prolific-exp"),
+        "num_ratings_per_question": 2,
+        "prolific": {
+            "description": "Test study",
+            "estimated_completion_time": 10,
+            "reward": 500,
+            "total_available_places": 5,
+        },
+    }
+
+
+def _mock_create_study(*, status: int = 200) -> respx.Route:
+    body = {"id": FAKE_STUDY_ID, "status": "UNPUBLISHED"} if status == 200 else {}
+    return respx.post(f"{PROLIFIC_BASE}/studies/").mock(return_value=Response(status, json=body))
+
+
+def _mock_publish_study() -> respx.Route:
+    return respx.post(f"{PROLIFIC_BASE}/studies/{FAKE_STUDY_ID}/transition/").mock(
+        return_value=Response(200, json={"id": FAKE_STUDY_ID, "status": "ACTIVE"})
+    )
+
+
+def _mock_delete_study(*, status: int = 204) -> respx.Route:
+    body = {} if status == 204 else {"error": "fail"}
+    return respx.delete(f"{PROLIFIC_BASE}/studies/{FAKE_STUDY_ID}/").mock(
+        return_value=Response(status, json=body)
+    )
+
+
+def _create_prolific_experiment(client: TestClient) -> dict:
+    _mock_create_study()
+    resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@respx.mock
+def test_prolific_create_stores_study_id(client: TestClient, enable_prolific):
+    data = _create_prolific_experiment(client)
+
+    assert data["prolific_study_id"] == FAKE_STUDY_ID
+    assert data["prolific_study_status"] == "UNPUBLISHED"
+    assert data["prolific_study_url"] is not None
+    assert FAKE_STUDY_ID in data["prolific_study_url"]
+    assert data["prolific_completion_url"] is not None
+
+
+@respx.mock
+def test_prolific_create_failure_returns_502(client: TestClient, enable_prolific):
+    _mock_create_study(status=500)
+
+    resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+
+    assert resp.status_code == 502
+
+    # Verify experiment was NOT persisted (rollback)
+    experiments = client.get("/api/admin/experiments").json()
+    assert len(experiments) == 0
+
+
+@respx.mock
+def test_prolific_publish_updates_status(client: TestClient, enable_prolific):
+    data = _create_prolific_experiment(client)
+    experiment_id = data["id"]
+
+    route = _mock_publish_study()
+
+    resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/publish")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+    assert route.called
+
+
+@respx.mock
+def test_prolific_delete_calls_prolific_api(client: TestClient, enable_prolific):
+    data = _create_prolific_experiment(client)
+    experiment_id = data["id"]
+
+    route = _mock_delete_study()
+
+    resp = client.delete(f"/api/admin/experiments/{experiment_id}")
+
+    assert resp.status_code == 200
+    assert route.called
+
+    experiments = client.get("/api/admin/experiments").json()
+    assert all(e["id"] != experiment_id for e in experiments)
+
+
+@respx.mock
+def test_prolific_delete_succeeds_when_api_fails(client: TestClient, enable_prolific):
+    data = _create_prolific_experiment(client)
+    experiment_id = data["id"]
+
+    _mock_delete_study(status=500)
+
+    resp = client.delete(f"/api/admin/experiments/{experiment_id}")
+
+    # Local delete succeeds even when Prolific API fails
+    assert resp.status_code == 200
+
+
+@respx.mock
+def test_prolific_delete_handles_404(client: TestClient, enable_prolific):
+    data = _create_prolific_experiment(client)
+    experiment_id = data["id"]
+
+    _mock_delete_study(status=404)
+
+    resp = client.delete(f"/api/admin/experiments/{experiment_id}")
+
+    assert resp.status_code == 200
+
+
+def test_platform_status_reflects_prolific_enabled(client: TestClient, enable_prolific):
+    resp = client.get("/api/admin/platform-status")
+    assert resp.status_code == 200
+    assert resp.json()["prolific_enabled"] is True
+
+
+def test_platform_status_disabled_by_default(client: TestClient):
+    settings = get_settings()
+    original = settings.prolific.api_token
+    settings.prolific.api_token = ""
+    try:
+        resp = client.get("/api/admin/platform-status")
+        assert resp.status_code == 200
+        assert resp.json()["prolific_enabled"] is False
+    finally:
+        settings.prolific.api_token = original

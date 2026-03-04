@@ -8,6 +8,7 @@ then reviewed and committed. See README Migrations section for workflow.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Optional
 
 from sqlalchemy import (
@@ -24,6 +25,18 @@ from sqlalchemy import (
 from sqlmodel import Field, SQLModel
 
 SESSION_DURATION_MINUTES = 60  # Hard-coded 1 hour per rater
+
+
+class ProlificStudyStatus(str, Enum):
+    """Prolific study lifecycle states."""
+
+    UNPUBLISHED = "UNPUBLISHED"
+    PUBLISHING = "PUBLISHING"
+    ACTIVE = "ACTIVE"
+    SCHEDULED = "SCHEDULED"
+    PAUSED = "PAUSED"
+    AWAITING_REVIEW = "AWAITING_REVIEW"
+    COMPLETED = "COMPLETED"
 
 
 class Experiment(SQLModel, table=True):
@@ -46,6 +59,18 @@ class Experiment(SQLModel, table=True):
     prolific_completion_url: Optional[str] = Field(
         default=None,
         sa_column=Column(String(2048), nullable=True),
+    )
+    prolific_study_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(128), nullable=True),
+    )
+    prolific_completion_code: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(64), nullable=True),
+    )
+    prolific_study_status: Optional[ProlificStudyStatus] = Field(
+        default=None,
+        sa_column=Column(String(32), nullable=True),
     )
 
 
@@ -113,6 +138,10 @@ class Rater(SQLModel, table=True):
     is_active: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default=text("true")),
+    )
+    is_preview: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
 
 

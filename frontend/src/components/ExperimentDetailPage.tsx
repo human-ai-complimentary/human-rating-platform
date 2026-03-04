@@ -69,6 +69,7 @@ function ExperimentDetailPage() {
       experiment={experiment}
       onBack={handleBack}
       onDeleted={handleDeleted}
+      onRefresh={loadExperiment}
     />
   );
 }

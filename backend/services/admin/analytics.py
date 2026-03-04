@@ -15,9 +15,11 @@ from .queries import (
 async def get_experiment_analytics(
     experiment_id: int,
     db: AsyncSession,
+    *,
+    include_preview: bool = False,
 ) -> dict[str, Any]:
     experiment = await fetch_experiment_or_404(experiment_id, db)
-    ratings = await fetch_ratings_for_experiment(experiment_id, db)
+    ratings = await fetch_ratings_for_experiment(experiment_id, db, include_preview=include_preview)
     total_questions = await fetch_total_questions_for_experiment(experiment_id, db)
 
     if not ratings:

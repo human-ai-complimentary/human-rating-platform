@@ -1,7 +1,24 @@
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from models import ProlificStudyStatus
+
+
+# Prolific schemas
+class ProlificStudyConfig(BaseModel):
+    description: str
+    estimated_completion_time: int = Field(ge=1)
+    reward: int = Field(ge=1)
+    total_available_places: int = Field(ge=1)
+    device_compatibility: list[Literal["desktop", "tablet", "mobile"]] = Field(
+        default_factory=lambda: ["desktop"]
+    )
+
+
+class PlatformStatus(BaseModel):
+    prolific_enabled: bool
 
 
 # Experiment schemas
@@ -9,6 +26,7 @@ class ExperimentCreate(BaseModel):
     name: str
     num_ratings_per_question: int = 3
     prolific_completion_url: Optional[str] = None
+    prolific: Optional[ProlificStudyConfig] = None
 
 
 class ExperimentResponse(BaseModel):
@@ -17,6 +35,9 @@ class ExperimentResponse(BaseModel):
     created_at: datetime
     num_ratings_per_question: int
     prolific_completion_url: Optional[str] = None
+    prolific_study_id: Optional[str] = None
+    prolific_study_status: Optional[ProlificStudyStatus] = None
+    prolific_study_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
 
