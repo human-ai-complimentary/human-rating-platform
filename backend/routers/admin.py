@@ -4,11 +4,18 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import get_settings
 from database import get_session
-from schemas import ExperimentCreate, ExperimentResponse
+from schemas import ExperimentCreate, ExperimentResponse, PlatformStatus
 from services import admin as admin_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/platform-status", response_model=PlatformStatus)
+async def get_platform_status():
+    settings = get_settings()
+    return PlatformStatus(prolific_enabled=settings.prolific.enabled)
 
 
 @router.post("/experiments", response_model=ExperimentResponse)
@@ -78,6 +85,14 @@ async def delete_experiment(
     db: AsyncSession = Depends(get_session),
 ):
     return await admin_service.delete_experiment(experiment_id=experiment_id, db=db)
+
+
+@router.post("/experiments/{experiment_id}/prolific/publish")
+async def publish_prolific_study(
+    experiment_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.publish_prolific_study(experiment_id=experiment_id, db=db)
 
 
 @router.get("/experiments/{experiment_id}/stats")

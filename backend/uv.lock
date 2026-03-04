@@ -284,6 +284,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "psycopg2-binary" },
     { name = "pydantic" },
     { name = "pydantic-settings", extra = ["toml"] },
@@ -295,7 +296,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
 ]
 
@@ -305,6 +305,7 @@ requires-dist = [
     { name = "alembic", specifier = "==1.18.4" },
     { name = "asyncpg", specifier = "==0.31.0" },
     { name = "fastapi", specifier = "==0.133.0" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "psycopg2-binary", specifier = "==2.9.11" },
     { name = "pydantic", specifier = "==2.12.5" },
     { name = "pydantic-settings", extras = ["toml"], specifier = "==2.12.0" },
@@ -315,10 +316,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = "==0.28.1" },
-    { name = "pytest", specifier = "==9.0.2" },
-]
+dev = [{ name = "pytest", specifier = "==9.0.2" }]
 
 [[package]]
 name = "idna"

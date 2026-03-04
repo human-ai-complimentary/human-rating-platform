@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Timer from './Timer';
@@ -19,6 +19,7 @@ function RaterView() {
   const prolificId = searchParams.get('PROLIFIC_PID');
   const studyId = searchParams.get('STUDY_ID');
   const sessionId = searchParams.get('SESSION_ID');
+  const isPreview = searchParams.get('preview') === 'true';
 
   const loadNextQuestion = useCallback(async (raterId: number) => {
     try {
@@ -40,12 +41,19 @@ function RaterView() {
     }
   }, []);
 
+  const startedRef = useRef(false);
+
   useEffect(() => {
     if (!experimentId || !prolificId) {
       setError('Missing experiment_id or PROLIFIC_PID in URL');
       setLoading(false);
       return;
     }
+
+    // Prevent React StrictMode double-mount from firing two concurrent
+    // startSession requests, which causes a unique constraint violation.
+    if (startedRef.current) return;
+    startedRef.current = true;
 
     api.startSession(experimentId, prolificId, studyId, sessionId)
       .then(data => {
@@ -57,6 +65,17 @@ function RaterView() {
         setLoading(false);
       });
   }, [experimentId, prolificId, studyId, sessionId, loadNextQuestion]);
+
+  useEffect(() => {
+    if (!(sessionExpired || allDone)) return;
+    const completionUrl = session?.completion_url;
+    if (!completionUrl) return;
+
+    const timer = setTimeout(() => {
+      window.location.href = completionUrl;
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [sessionExpired, allDone, session?.completion_url]);
 
   const handleSubmit = async (answer: string, confidence: number, timeStarted: string) => {
     if (!session || !question) return;
@@ -192,12 +211,6 @@ function RaterView() {
   if (sessionExpired || allDone) {
     const completionUrl = session?.completion_url;
 
-    if (completionUrl) {
-      setTimeout(() => {
-        window.location.href = completionUrl;
-      }, 3000);
-    }
-
     return (
       <div style={styles.container}>
         <div style={styles.completionCard}>
@@ -243,6 +256,19 @@ function RaterView() {
 
   return (
     <div style={styles.container}>
+      {isPreview && (
+        <div style={{
+          background: '#fff3cd',
+          border: '1px solid #ffc107',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          fontSize: '14px',
+          color: '#856404',
+        }}>
+          Preview mode — ratings submitted here are real and will appear in your data.
+        </div>
+      )}
       <Timer
         sessionEndTime={session.session_end_time}
         onExpire={handleSessionExpired}

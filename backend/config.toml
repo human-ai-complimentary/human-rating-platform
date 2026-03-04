@@ -1,5 +1,6 @@
 [app]
 cors_origins = ["http://localhost:5173", "http://localhost:8000"]
+external_base_url = "http://localhost:5173"
 
 [database]
 url = "postgresql://postgres:postgres@localhost:5432/human_rating_platform"
@@ -16,3 +17,7 @@ experiment_name = "Seed - Local Baseline"
 question_count = 50
 num_ratings_per_question = 3
 prolific_completion_url = ""
+
+[prolific]
+api_token = ""
+base_url = "https://api.prolific.com/api/v1"

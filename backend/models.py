@@ -47,6 +47,18 @@ class Experiment(SQLModel, table=True):
         default=None,
         sa_column=Column(String(2048), nullable=True),
     )
+    prolific_study_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(128), nullable=True),
+    )
+    prolific_completion_code: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(64), nullable=True),
+    )
+    prolific_study_status: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(32), nullable=True),
+    )
 
 
 class Question(SQLModel, table=True):

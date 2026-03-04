@@ -9,6 +9,7 @@ import type {
   Experiment,
   ExperimentCreate,
   ExperimentStats,
+  PlatformStatus,
   Question,
   RatingSubmit,
   Session,
@@ -59,6 +60,8 @@ const routes = {
     stats: (id: number) => `/admin/experiments/${id}/stats`,
     analytics: (id: number) => `/admin/experiments/${id}/analytics`,
     export: (id: number) => `/admin/experiments/${id}/export`,
+    platformStatus: '/admin/platform-status',
+    prolificPublish: (id: number) => `/admin/experiments/${id}/prolific/publish`,
   },
   rater: {
     start: '/raters/start',
@@ -269,6 +272,16 @@ export const api = {
   async deleteExperiment(experimentId: number): Promise<MessageResponse> {
     return requestJson<MessageResponse>(routes.admin.experiment(experimentId), {
       method: 'DELETE',
+    });
+  },
+
+  async getPlatformStatus(): Promise<PlatformStatus> {
+    return requestJson<PlatformStatus>(routes.admin.platformStatus);
+  },
+
+  async publishProlificStudy(experimentId: number): Promise<MessageResponse> {
+    return requestJson<MessageResponse>(routes.admin.prolificPublish(experimentId), {
+      method: 'POST',
     });
   },
 

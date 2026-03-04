@@ -36,6 +36,7 @@ class AppSettings(_StrictModel):
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["*"],
     )
+    external_base_url: str = "http://localhost:5173"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -88,12 +89,22 @@ class SeedingSettings(_StrictModel):
     prolific_completion_url: str | None = None
 
 
+class ProlificSettings(_StrictModel):
+    api_token: str = ""
+    base_url: str = "https://api.prolific.com/api/v1"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_token)
+
+
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     exports: ExportSettings = Field(default_factory=ExportSettings)
     testing: TestingSettings = Field(default_factory=TestingSettings)
     seeding: SeedingSettings = Field(default_factory=SeedingSettings)
+    prolific: ProlificSettings = Field(default_factory=ProlificSettings)
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

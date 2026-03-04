@@ -4,6 +4,9 @@ export interface Experiment {
   created_at: string;
   num_ratings_per_question: number;
   prolific_completion_url: string | null;
+  prolific_study_id: string | null;
+  prolific_study_status: string | null;
+  prolific_study_url: string | null;
   question_count: number;
   rating_count: number;
 }
@@ -81,8 +84,21 @@ export interface RaterAnalytics {
   avg_confidence: number;
 }
 
+export interface ProlificStudyConfig {
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  total_available_places: number;
+  device_compatibility: string[];
+}
+
+export interface PlatformStatus {
+  prolific_enabled: boolean;
+}
+
 export interface ExperimentCreate {
   name: string;
   num_ratings_per_question: number;
   prolific_completion_url: string;
+  prolific?: ProlificStudyConfig;
 }

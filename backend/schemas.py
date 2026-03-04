@@ -4,11 +4,25 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# Prolific schemas
+class ProlificStudyConfig(BaseModel):
+    description: str
+    estimated_completion_time: int
+    reward: int
+    total_available_places: int
+    device_compatibility: list[str] = Field(default_factory=lambda: ["desktop"])
+
+
+class PlatformStatus(BaseModel):
+    prolific_enabled: bool
+
+
 # Experiment schemas
 class ExperimentCreate(BaseModel):
     name: str
     num_ratings_per_question: int = 3
     prolific_completion_url: Optional[str] = None
+    prolific: Optional[ProlificStudyConfig] = None
 
 
 class ExperimentResponse(BaseModel):
@@ -17,6 +31,9 @@ class ExperimentResponse(BaseModel):
     created_at: datetime
     num_ratings_per_question: int
     prolific_completion_url: Optional[str] = None
+    prolific_study_id: Optional[str] = None
+    prolific_study_status: Optional[str] = None
+    prolific_study_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
 
