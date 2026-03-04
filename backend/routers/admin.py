@@ -8,6 +8,8 @@ from database import get_session
 from schemas import ExperimentCreate, ExperimentResponse
 from services import admin as admin_service
 from auth import require_admin, get_admin_manager
+from config import get_settings
+from services.authn import verify_clerk_token_and_get_email
 
 # Public admin router (for auth endpoints)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -16,11 +18,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 secure_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
-@router.post("/auth/login")
-async def admin_login(
-    request: Request,
-    manager=Depends(get_admin_manager),
-):
+async def get_clerk_email_from_request(request: Request) -> str:
     # Require a Clerk session token via Authorization: Bearer <token>
     auth = request.headers.get("authorization") or request.headers.get("Authorization")
     if not auth or not auth.lower().startswith("bearer "):
@@ -29,10 +27,6 @@ async def admin_login(
     token = auth.split(" ", 1)[1].strip()
     if not token:
         raise HTTPException(status_code=401, detail="Invalid Bearer token")
-
-    # Verify token and extract email from verified claims
-    from services.authn import verify_clerk_token_and_get_email
-    from config import get_settings
 
     settings = get_settings()
     try:
@@ -44,6 +38,15 @@ async def admin_login(
         # Hide internals behind a generic 401
         raise HTTPException(status_code=401, detail="Invalid Clerk token")
 
+    return email
+
+
+@router.post("/auth/login")
+async def admin_login(
+    email: str = Depends(get_clerk_email_from_request),
+    manager=Depends(get_admin_manager),
+):
+    settings = get_settings()
     allow = {e.strip().lower() for e in settings.admin_allowlist}
     if email.strip().lower() not in allow:
         return JSONResponse(status_code=403, content={"message": "Email is not allowlisted"})

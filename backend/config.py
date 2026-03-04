@@ -83,7 +83,6 @@ class TestingSettings(_StrictModel):
 class ClerkSettings(_StrictModel):
     issuer: str = ""
     jwks_url: str = ""
-    template: str = "admin"
     audience: str = "human-rating-platform-admin-api"
 
 
@@ -110,7 +109,6 @@ class Settings(BaseSettings):
         description="Comma-separated list of allowlisted admin emails.",
     )
     app_secret_key: str = Field(
-        default="please-change-me-to-a-long-random-string",
         description="Secret for signing the HTTP-only admin session cookie.",
     )
     hrp_session_cookie: str = Field(default="hrp_session")

@@ -61,9 +61,8 @@ This project uses Clerk for frontend identity and a backend HTTP‑only cookie f
   - `CLERK__ISSUER`: your Clerk issuer URL (e.g., `https://<your-tenant>.clerk.accounts.dev`).
   - `CLERK__JWKS_URL`: `https://<your-tenant>.clerk.accounts.dev/.well-known/jwks.json`.
   - `CLERK__AUDIENCE`: audience string set in your Clerk JWT template (e.g., `human-rating-platform-admin-api`).
-  - `CLERK__TEMPLATE` (optional): template name used by the frontend when calling `getToken` (default `admin`).
 - Clerk JWT template (Dashboard → JWT Templates):
-  - Name: `admin` (or set `CLERK__TEMPLATE` accordingly)
+  - Name: `admin`
   - Claims JSON:
     ```json
     { "email": "{{user.primary_email_address}}" }
