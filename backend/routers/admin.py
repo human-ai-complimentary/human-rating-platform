@@ -6,7 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_session
-from schemas import ExperimentCreate, ExperimentResponse, PlatformStatus
+from schemas import (
+    ExperimentCreate,
+    ExperimentResponse,
+    PilotStudyCreate,
+    PlatformStatus,
+    RecommendationResponse,
+    StudyRoundCreate,
+    StudyRoundResponse,
+)
 from services import admin as admin_service
 from auth import require_admin, get_admin_manager
 from services.authn import verify_clerk_token_and_get_email
@@ -168,4 +176,47 @@ async def get_experiment_analytics(
 ):
     return await admin_service.get_experiment_analytics(
         experiment_id=experiment_id, db=db, include_preview=include_preview
+    )
+
+@secure_router.post("/experiments/{experiment_id}/prolific/pilot", response_model=StudyRoundResponse)
+async def run_pilot_study(
+    experiment_id: int,
+    payload: PilotStudyCreate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.run_pilot_study(
+        experiment_id=experiment_id, payload=payload, db=db
+    )
+
+
+@secure_router.get(
+    "/experiments/{experiment_id}/prolific/recommend", response_model=RecommendationResponse
+)
+async def get_prolific_recommendation(
+    experiment_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.calculate_recommendation(
+        experiment_id=experiment_id, db=db
+    )
+
+
+@secure_router.post("/experiments/{experiment_id}/prolific/rounds", response_model=StudyRoundResponse)
+async def run_study_round(
+    experiment_id: int,
+    payload: StudyRoundCreate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.run_study_round(
+        experiment_id=experiment_id, payload=payload, db=db
+    )
+
+
+@secure_router.get("/experiments/{experiment_id}/prolific/rounds", response_model=list[StudyRoundResponse])
+async def list_study_rounds(
+    experiment_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.list_study_rounds(
+        experiment_id=experiment_id, db=db
     )

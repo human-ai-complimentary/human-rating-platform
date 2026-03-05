@@ -11,13 +11,7 @@ from config import get_settings
 from models import Experiment, ProlificStudyStatus, Question, Rating, Rater
 from schemas import ExperimentCreate, ExperimentResponse
 from .mappers import build_experiment_response
-from .prolific import (
-    build_completion_url,
-    create_study,
-    delete_study,
-    generate_completion_code,
-    publish_study,
-)
+from .prolific import delete_study, publish_study
 from .queries import fetch_experiment_or_404, fetch_total_questions_for_experiment
 
 logger = logging.getLogger(__name__)
@@ -27,66 +21,6 @@ async def create_experiment(
     payload: ExperimentCreate,
     db: AsyncSession,
 ) -> ExperimentResponse:
-    settings = get_settings()
-
-    # Prolific auto-create path
-    if settings.prolific.enabled and payload.prolific is not None:
-        completion_code = generate_completion_code()
-        completion_url = build_completion_url(completion_code)
-
-        db_experiment = Experiment(
-            name=payload.name,
-            num_ratings_per_question=payload.num_ratings_per_question,
-            prolific_completion_url=completion_url,
-            prolific_completion_code=completion_code,
-        )
-        db.add(db_experiment)
-        await db.flush()  # assigns ID without committing
-
-        # Build the external study URL with Prolific placeholders
-        external_study_url = (
-            f"{settings.app.site_url}/rate"
-            f"?experiment_id={db_experiment.id}"
-            f"&PROLIFIC_PID={{{{%PROLIFIC_PID%}}}}"
-            f"&STUDY_ID={{{{%STUDY_ID%}}}}"
-            f"&SESSION_ID={{{{%SESSION_ID%}}}}"
-        )
-
-        try:
-            result = await create_study(
-                settings=settings.prolific,
-                name=payload.name,
-                description=payload.prolific.description,
-                external_study_url=external_study_url,
-                estimated_completion_time=payload.prolific.estimated_completion_time,
-                reward=payload.prolific.reward,
-                total_available_places=payload.prolific.total_available_places,
-                completion_code=completion_code,
-                device_compatibility=payload.prolific.device_compatibility,
-            )
-        except Exception:
-            await db.rollback()
-            logger.exception("Failed to create Prolific study for experiment '%s'", payload.name)
-            raise HTTPException(
-                status_code=502,
-                detail="Failed to create study on Prolific. Please check your API token and try again.",
-            )
-
-        db_experiment.prolific_study_id = result["id"]
-        db_experiment.prolific_study_status = ProlificStudyStatus(
-            result.get("status", "UNPUBLISHED")
-        )
-        await db.commit()
-        await db.refresh(db_experiment)
-
-        logger.info(
-            "Created experiment id=%s with Prolific study_id=%s",
-            db_experiment.id,
-            result["id"],
-        )
-        return build_experiment_response(db_experiment, question_count=0, rating_count=0)
-
-    # Manual path (unchanged)
     db_experiment = Experiment(
         name=payload.name,
         num_ratings_per_question=payload.num_ratings_per_question,

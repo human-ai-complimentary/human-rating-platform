@@ -221,7 +221,9 @@ class StudyRound(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
     prolific_study_id: str = Field(sa_column=Column(String(128), nullable=False))
-    prolific_study_status: str = Field(sa_column=Column(String(32), nullable=False))
+    prolific_study_status: ProlificStudyStatus = Field(
+        sa_column=Column(String(32), nullable=False)
+    )
     places_requested: int = Field(sa_column=Column(Integer, nullable=False))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

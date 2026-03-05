@@ -19,14 +19,16 @@ class ProlificStudyConfig(BaseModel):
 
 class PilotStudyCreate(BaseModel):
     description: str
-    estimated_completion_time: int
-    reward: int
-    pilot_hours: int = 5
-    device_compatibility: list[str] = Field(default_factory=lambda: ["desktop"])
+    estimated_completion_time: int = Field(ge=1)
+    reward: int = Field(ge=1)
+    pilot_hours: int = Field(default=5, ge=1)
+    device_compatibility: list[Literal["desktop", "tablet", "mobile"]] = Field(
+        default_factory=lambda: ["desktop"]
+    )
 
 
 class StudyRoundCreate(BaseModel):
-    places: int
+    places: int = Field(ge=1)
 
 
 class RecommendationResponse(BaseModel):
@@ -42,7 +44,7 @@ class StudyRoundResponse(BaseModel):
     round_number: int
     is_pilot: bool
     prolific_study_id: str
-    prolific_study_status: str
+    prolific_study_status: ProlificStudyStatus
     places_requested: int
     created_at: datetime
     prolific_study_url: str

@@ -1,7 +1,7 @@
 """add_study_rounds
 
 Revision ID: 20260305032434
-Revises: 20260304075406
+Revises: faf2ebe67bd9
 Create Date: 2026-03-05 03:24:36.430448
 
 """
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '20260305032434'
-down_revision: Union[str, Sequence[str], None] = '20260304075406'
+revision: str = "20260305032434"
+down_revision: Union[str, Sequence[str], None] = "faf2ebe67bd9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
