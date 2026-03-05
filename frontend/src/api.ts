@@ -9,10 +9,13 @@ import type {
   Experiment,
   ExperimentCreate,
   ExperimentStats,
+  PilotStudyCreate,
   PlatformStatus,
   Question,
   RatingSubmit,
+  RecommendationResponse,
   Session,
+  StudyRound,
   Upload,
 } from './types';
 
@@ -65,6 +68,9 @@ const routes = {
     authLogout: '/admin/auth/logout',
     platformStatus: '/admin/platform-status',
     prolificPublish: (id: number) => `/admin/experiments/${id}/prolific/publish`,
+    prolificPilot: (id: number) => `/admin/experiments/${id}/prolific/pilot`,
+    prolificRecommend: (id: number) => `/admin/experiments/${id}/prolific/recommend`,
+    prolificRounds: (id: number) => `/admin/experiments/${id}/prolific/rounds`,
   },
   rater: {
     start: '/raters/start',
@@ -311,6 +317,28 @@ export const api = {
     return requestJson<MessageResponse>(routes.admin.prolificPublish(experimentId), {
       method: 'POST',
     });
+  },
+
+  async runPilotStudy(experimentId: number, data: PilotStudyCreate): Promise<StudyRound> {
+    return requestJson<StudyRound>(routes.admin.prolificPilot(experimentId), {
+      method: 'POST',
+      json: data,
+    });
+  },
+
+  async getRecommendation(experimentId: number): Promise<RecommendationResponse> {
+    return requestJson<RecommendationResponse>(routes.admin.prolificRecommend(experimentId));
+  },
+
+  async runStudyRound(experimentId: number, places: number): Promise<StudyRound> {
+    return requestJson<StudyRound>(routes.admin.prolificRounds(experimentId), {
+      method: 'POST',
+      json: { places },
+    });
+  },
+
+  async listStudyRounds(experimentId: number): Promise<StudyRound[]> {
+    return requestJson<StudyRound[]>(routes.admin.prolificRounds(experimentId));
   },
 
   // Returns a URL string for direct browser download (not a fetch).
