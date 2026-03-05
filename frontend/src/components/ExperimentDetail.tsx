@@ -7,6 +7,7 @@ interface ExperimentDetailProps {
   experiment: Experiment;
   onBack: () => void;
   onDeleted: () => void;
+  onRefresh: () => void;
 }
 
 interface AssistanceMethods {
@@ -16,13 +17,15 @@ interface AssistanceMethods {
   aiChatAssistant: boolean;
 }
 
-function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailProps) {
+function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: ExperimentDetailProps) {
   const [stats, setStats] = useState<ExperimentStats | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [includePreview, setIncludePreview] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   // TODO: When the methods team provides assistance methods for experimentation, we should add them here.
   // TODO: Load these from experiment settings in the backend
@@ -47,12 +50,12 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await api.getExperimentStats(experiment.id);
+      const data = await api.getExperimentStats(experiment.id, { includePreview });
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     }
-  }, [experiment.id]);
+  }, [experiment.id, includePreview]);
 
   const loadUploads = useCallback(async () => {
     try {
@@ -72,9 +75,9 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
     e.preventDefault();
     if (!uploadFile) return;
 
-    if (stats && stats.total_ratings > 0) {
+    if (experiment.rating_count > 0) {
       if (!window.confirm(
-        `This experiment already has ${stats.total_ratings} ratings. ` +
+        `This experiment already has ${experiment.rating_count} ratings. ` +
         `Uploading will ADD more questions (not replace existing ones). Continue?`
       )) {
         return;
@@ -97,13 +100,34 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
   };
 
   const handleDelete = async () => {
-    if (window.confirm(`Delete "${experiment.name}"? This cannot be undone.`)) {
+    const prolificWarning = experiment.prolific_study_id
+      ? ' The linked Prolific study will also be deleted.'
+      : '';
+    if (window.confirm(`Delete "${experiment.name}"? This cannot be undone.${prolificWarning}`)) {
       try {
         await api.deleteExperiment(experiment.id);
         onDeleted();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
+    }
+  };
+
+  const handlePublishProlific = async () => {
+    if (!window.confirm('Publish this study on Prolific? Participants will be able to start immediately.')) {
+      return;
+    }
+    setError(null);
+    setIsPublishing(true);
+    try {
+      await api.publishProlificStudy(experiment.id);
+      setSuccess('Study published on Prolific!');
+      setTimeout(() => setSuccess(null), 3000);
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to publish study');
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -393,11 +417,34 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
                       <div style={styles.statLabel}>Raters</div>
                     </div>
                   </div>
+                  <div style={{ ...styles.toggleRow, borderBottom: 'none', paddingBottom: '8px' }}>
+                    <div style={styles.toggleInfo}>
+                      <div style={styles.toggleLabel}>Include preview data</div>
+                      <div style={styles.toggleDescription}>
+                        Show data from preview sessions in stats, analytics, and exports.
+                      </div>
+                    </div>
+                    <div style={styles.toggle}>
+                      <div
+                        style={{
+                          ...styles.toggleTrack,
+                          background: includePreview ? '#4a90d9' : '#ddd',
+                        }}
+                        onClick={() => setIncludePreview(!includePreview)}
+                      />
+                      <div
+                        style={{
+                          ...styles.toggleThumb,
+                          left: includePreview ? '22px' : '2px',
+                        }}
+                      />
+                    </div>
+                  </div>
                   <div style={styles.buttonGroup}>
                     <button style={styles.primaryButton} onClick={() => setShowAnalytics(true)}>
                       View Analytics
                     </button>
-                    <a href={api.getExportUrl(experiment.id)} download style={{ flex: 1 }}>
+                    <a href={api.getExportUrl(experiment.id, { includePreview })} download style={{ flex: 1 }}>
                       <button style={{ ...styles.secondaryButton, width: '100%' }}>
                         Export CSV
                       </button>
@@ -414,22 +461,86 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
               <h2 style={styles.sectionTitle}>Prolific Integration</h2>
             </div>
             <div style={styles.sectionBody}>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Study URL</label>
-                <input
-                  type="text"
-                  value={getRaterLink()}
-                  readOnly
-                  onClick={(e) => {
-                    (e.target as HTMLInputElement).select();
-                    copyToClipboard(getRaterLink());
-                  }}
-                  style={styles.input}
-                />
-                <div style={styles.hint}>Click to copy. Use this as your study URL in Prolific.</div>
-              </div>
-              {experiment.prolific_completion_url && (
+              {experiment.prolific_study_id ? (
+                <>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Prolific Study ID</label>
+                    <input
+                      type="text"
+                      value={experiment.prolific_study_id}
+                      readOnly
+                      onClick={(e) => {
+                        (e.target as HTMLInputElement).select();
+                        copyToClipboard(experiment.prolific_study_id!);
+                      }}
+                      style={styles.input}
+                    />
+                  </div>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Study Status</label>
+                    <div>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        background: experiment.prolific_study_status === 'ACTIVE' ? '#d4edda' : '#fff3cd',
+                        color: experiment.prolific_study_status === 'ACTIVE' ? '#155724' : '#856404',
+                      }}>
+                        {experiment.prolific_study_status}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => {
+                        window.open(experiment.prolific_study_url!, '_blank');
+                      }}
+                      style={styles.secondaryButton}
+                    >
+                      Open on Prolific
+                    </button>
+                    <button
+                      onClick={() => {
+                        const previewId = `preview_${Date.now()}`;
+                        const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
+                        window.open(url, '_blank');
+                      }}
+                      style={styles.secondaryButton}
+                    >
+                      Preview as Participant
+                    </button>
+                    <button
+                      onClick={handlePublishProlific}
+                      disabled={isPublishing}
+                      style={{
+                        ...styles.primaryButton,
+                        ...(isPublishing ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
+                      }}
+                    >
+                      {isPublishing ? 'Publishing...' : 'Publish on Prolific'}
+                    </button>
+                  </div>
+                </>
+              ) : (
                 <div style={styles.inputGroup}>
+                  <label style={styles.label}>Study URL</label>
+                  <input
+                    type="text"
+                    value={getRaterLink()}
+                    readOnly
+                    onClick={(e) => {
+                      (e.target as HTMLInputElement).select();
+                      copyToClipboard(getRaterLink());
+                    }}
+                    style={styles.input}
+                  />
+                  <div style={styles.hint}>Click to copy. Use this as your study URL in Prolific.</div>
+                </div>
+              )}
+              {experiment.prolific_completion_url && (
+                <div style={{ ...styles.inputGroup, marginTop: experiment.prolific_study_id ? '0' : undefined }}>
                   <label style={styles.label}>Completion URL</label>
                   <input
                     type="text"
@@ -482,7 +593,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted }: ExperimentDetailPro
               )}
 
               {/* Warning if ratings exist */}
-              {stats && stats.total_ratings > 0 && (
+              {experiment.rating_count > 0 && (
                 <div style={styles.warning}>
                   <strong>Note:</strong> Uploading adds questions, doesn't replace existing ones.
                 </div>

@@ -9,6 +9,7 @@ import type {
   Experiment,
   ExperimentCreate,
   ExperimentStats,
+  PlatformStatus,
   Question,
   RatingSubmit,
   Session,
@@ -62,6 +63,8 @@ const routes = {
     export: (id: number) => `/admin/experiments/${id}/export`,
     authLogin: '/admin/auth/login',
     authLogout: '/admin/auth/logout',
+    platformStatus: '/admin/platform-status',
+    prolificPublish: (id: number) => `/admin/experiments/${id}/prolific/publish`,
   },
   rater: {
     start: '/raters/start',
@@ -272,12 +275,22 @@ export const api = {
     });
   },
 
-  async getExperimentStats(experimentId: number): Promise<ExperimentStats> {
-    return requestJson<ExperimentStats>(routes.admin.stats(experimentId));
+  async getExperimentStats(
+    experimentId: number,
+    { includePreview = false }: { includePreview?: boolean } = {}
+  ): Promise<ExperimentStats> {
+    return requestJson<ExperimentStats>(routes.admin.stats(experimentId), {
+      query: { ...(includePreview ? { include_preview: 'true' } : {}) },
+    });
   },
 
-  async getExperimentAnalytics(experimentId: number): Promise<Analytics> {
-    return requestJson<Analytics>(routes.admin.analytics(experimentId));
+  async getExperimentAnalytics(
+    experimentId: number,
+    { includePreview = false }: { includePreview?: boolean } = {}
+  ): Promise<Analytics> {
+    return requestJson<Analytics>(routes.admin.analytics(experimentId), {
+      query: { ...(includePreview ? { include_preview: 'true' } : {}) },
+    });
   },
 
   async listUploads(experimentId: number): Promise<Upload[]> {
@@ -290,9 +303,24 @@ export const api = {
     });
   },
 
+  async getPlatformStatus(): Promise<PlatformStatus> {
+    return requestJson<PlatformStatus>(routes.admin.platformStatus);
+  },
+
+  async publishProlificStudy(experimentId: number): Promise<MessageResponse> {
+    return requestJson<MessageResponse>(routes.admin.prolificPublish(experimentId), {
+      method: 'POST',
+    });
+  },
+
   // Returns a URL string for direct browser download (not a fetch).
-  getExportUrl(experimentId: number): string {
-    return buildUrl(routes.admin.export(experimentId));
+  getExportUrl(
+    experimentId: number,
+    { includePreview = false }: { includePreview?: boolean } = {}
+  ): string {
+    return buildUrl(routes.admin.export(experimentId), {
+      ...(includePreview ? { include_preview: 'true' } : {}),
+    });
   },
 
   // ── Rater ────────────────────────────────────────────────────────────────
@@ -303,7 +331,8 @@ export const api = {
     experimentId: string,
     prolificId: string,
     studyId: string | null,
-    sessionId: string | null
+    sessionId: string | null,
+    preview: boolean = false
   ): Promise<Session> {
     return requestJson<Session>(routes.rater.start, {
       method: 'POST',
@@ -312,6 +341,7 @@ export const api = {
         PROLIFIC_PID: prolificId,
         STUDY_ID: studyId,
         SESSION_ID: sessionId,
+        ...(preview ? { preview: 'true' } : {}),
       },
     });
   },

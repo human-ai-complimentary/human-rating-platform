@@ -253,6 +253,8 @@ Env keys use Pydantic's nested `__` delimiter for nested settings models:
 - `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
 - `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
 - `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
+- `PROLIFIC__API_TOKEN` — Prolific API token (optional; enables automated study management)
+- `APP__SITE_URL` — public frontend URL used to build Prolific study links (default: `http://localhost:5173`)
 
 Top‑level convenience envs (not nested):
 
@@ -324,6 +326,8 @@ Set in repo → **Settings** → **Secrets and variables** → **Actions**:
 **API service** (set in Render Dashboard → API service → Environment):
 - `DATABASE__URL` — Render Postgres internal connection string
 - `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
+- `APP__SITE_URL` — public frontend URL, e.g. `https://human-rating-platform-web.onrender.com`
+- `PROLIFIC__API_TOKEN` — Prolific API token (optional; omit to use manual workflow)
 
 **Web service** (set in Render Dashboard → Web service → Environment):
 - `VITE_API_HOST` — public API origin, e.g. `https://human-rating-platform-api-uxnt.onrender.com`
@@ -382,13 +386,32 @@ q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 
 ## Prolific Integration
 
-1. **Create an experiment** in the admin UI (`/admin`).
-2. **Upload questions** via CSV.
-3. **Copy the study URL** from the experiment detail page in the admin UI.
-4. **Paste it into Prolific** as the external study URL (Prolific Dashboard → Study → Study Link).
-5. **Set the completion URL** in the experiment's settings in the admin UI — this is where raters are redirected after finishing.
+There are two modes, depending on whether `PROLIFIC__API_TOKEN` is set.
 
-Study URL format (Prolific fills in the `{{...}}` placeholders):
+### Automated (recommended)
+
+Set `PROLIFIC__API_TOKEN` in `backend/.env` (or as an env var on your server). The platform will create, publish, and delete Prolific studies via their API.
+
+1. **Create an experiment** in the admin UI — fill in the Prolific fields (description, reward, estimated time, number of places).
+2. **Upload questions** via CSV.
+3. The backend creates a **draft** study on Prolific automatically, with the correct study URL and completion code.
+4. **Preview** the rater experience using the "Preview as Participant" button.
+5. **Publish** the study from the experiment detail page when ready.
+6. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
+
+### Manual (no API token)
+
+If `PROLIFIC__API_TOKEN` is not set, the Prolific fields are hidden and the platform works with manual URL copy-paste:
+
+1. **Create an experiment** in the admin UI.
+2. **Upload questions** via CSV.
+3. **Copy the study URL** from the experiment detail page.
+4. **Paste it into Prolific** as the external study URL (Prolific Dashboard → Study → Study Link).
+5. **Set the completion URL** in the experiment — this is where raters are redirected after finishing.
+
+### Study URL format
+
+Prolific fills in the `{{...}}` placeholders at runtime:
 
 ```text
 https://your-app.com/rate?experiment_id=1&PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}
@@ -402,15 +425,18 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 
 ### Admin
 
-- `POST /api/admin/auth/login` — issue HTTP‑only admin cookie for allowlisted email
+- `POST /api/admin/auth/login` — issue HTTP-only admin cookie for allowlisted email
 - `POST /api/admin/auth/logout` — clear admin cookie
+- `GET /api/admin/platform-status` — check platform capabilities (e.g. Prolific enabled)
 - `POST /api/admin/experiments` — create experiment
 - `GET /api/admin/experiments` — list experiments
 - `POST /api/admin/experiments/{id}/upload` — upload question CSV
+- `GET /api/admin/experiments/{id}/uploads` — list uploads for experiment
 - `GET /api/admin/experiments/{id}/stats` — experiment statistics
 - `GET /api/admin/experiments/{id}/analytics` — rating analytics
 - `GET /api/admin/experiments/{id}/export` — export ratings as CSV
-- `DELETE /api/admin/experiments/{id}` — delete experiment
+- `POST /api/admin/experiments/{id}/prolific/publish` — publish linked Prolific study
+- `DELETE /api/admin/experiments/{id}` — delete experiment (+ Prolific study if linked)
 
 ### Rater
 

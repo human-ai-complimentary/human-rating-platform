@@ -24,6 +24,7 @@ async def start_session(
     PROLIFIC_PID: str = Query(...),
     STUDY_ID: Optional[str] = Query(None),
     SESSION_ID: Optional[str] = Query(None),
+    preview: bool = Query(False),
     db: AsyncSession = Depends(get_session),
 ):
     return await rater.start_session(
@@ -31,6 +32,7 @@ async def start_session(
         prolific_pid=PROLIFIC_PID,
         study_id=STUDY_ID,
         session_id=SESSION_ID,
+        is_preview=preview,
         db=db,
     )
 

@@ -6,6 +6,7 @@ from .experiments import (
     delete_experiment,
     get_experiment_stats,
     list_experiments,
+    publish_prolific_study,
 )
 from .exports import build_export_filename, stream_export_csv_chunks
 from .uploads import list_uploads, upload_questions_csv
@@ -18,6 +19,7 @@ __all__ = [
     "get_experiment_stats",
     "list_experiments",
     "list_uploads",
+    "publish_prolific_study",
     "stream_export_csv_chunks",
     "upload_questions_csv",
 ]

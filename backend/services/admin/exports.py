@@ -73,6 +73,7 @@ async def stream_export_csv_chunks(
     experiment_id: int,
     db: AsyncSession,
     batch_size: int | None = None,
+    include_preview: bool = False,
 ) -> AsyncIterator[str]:
     resolved_batch_size = _resolve_batch_size(batch_size)
     await fetch_experiment_or_404(experiment_id, db)
@@ -87,6 +88,8 @@ async def stream_export_csv_chunks(
         .order_by(Rating.id)
         .execution_options(stream_results=True, yield_per=resolved_batch_size)
     )
+    if not include_preview:
+        statement = statement.where(Rater.is_preview == False)  # noqa: E712
     result = await db.stream(statement)
 
     try:

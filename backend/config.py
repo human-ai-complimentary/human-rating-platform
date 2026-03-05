@@ -36,6 +36,7 @@ class AppSettings(_StrictModel):
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["*"],
     )
+    site_url: str = "http://localhost:5173"
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -94,6 +95,15 @@ class SeedingSettings(_StrictModel):
     prolific_completion_url: str | None = None
 
 
+class ProlificSettings(_StrictModel):
+    api_token: str = ""
+    base_url: str = "https://api.prolific.com/api/v1"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_token)
+
+
 class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
@@ -101,6 +111,7 @@ class Settings(BaseSettings):
     testing: TestingSettings = Field(default_factory=TestingSettings)
     clerk: ClerkSettings = Field(default_factory=ClerkSettings)
     seeding: SeedingSettings = Field(default_factory=SeedingSettings)
+    prolific: ProlificSettings = Field(default_factory=ProlificSettings)
 
     # Admin/session config (mapped from flat env vars for ergonomics)
     admin_auth_enabled: bool = Field(default=True)
