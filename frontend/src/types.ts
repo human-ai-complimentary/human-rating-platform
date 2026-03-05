@@ -102,3 +102,30 @@ export interface ExperimentCreate {
   prolific_completion_url: string;
   prolific?: ProlificStudyConfig;
 }
+
+export interface StudyRound {
+  id: number;
+  round_number: number;
+  is_pilot: boolean;
+  prolific_study_id: string;
+  prolific_study_status: string;
+  places_requested: number;
+  created_at: string;
+  prolific_study_url: string;
+}
+
+export interface PilotStudyCreate {
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  pilot_hours: number;
+  device_compatibility: string[];
+}
+
+export interface RecommendationResponse {
+  avg_time_per_question_seconds: number;
+  remaining_rating_actions: number;
+  total_hours_remaining: number;
+  recommended_places: number;
+  is_complete: boolean;
+}

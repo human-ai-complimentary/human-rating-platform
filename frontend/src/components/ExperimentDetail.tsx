@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import Analytics from './Analytics';
-import type { Experiment, ExperimentStats, Upload } from '../types';
+import type { Experiment, ExperimentStats, PilotStudyCreate, RecommendationResponse, StudyRound, Upload } from '../types';
 
 interface ExperimentDetailProps {
   experiment: Experiment;
@@ -24,6 +24,16 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [success, setSuccess] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [prolificEnabled, setProlificEnabled] = useState(false);
+  const [rounds, setRounds] = useState<StudyRound[]>([]);
+  const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
+  const [pilotForm, setPilotForm] = useState<PilotStudyCreate>({
+    description: '',
+    estimated_completion_time: 60,
+    reward: 900,
+    pilot_hours: 5,
+    device_compatibility: ['desktop'],
+  });
 
   // TODO: When the methods team provides assistance methods for experimentation, we should add them here.
   // TODO: Load these from experiment settings in the backend
@@ -64,10 +74,38 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     }
   }, [experiment.id]);
 
+  const loadRounds = useCallback(async () => {
+    try {
+      const data = await api.listStudyRounds(experiment.id);
+      setRounds(data);
+    } catch {
+      // Ignore — Prolific may not be enabled
+    }
+  }, [experiment.id]);
+
+  const loadRecommendation = useCallback(async () => {
+    try {
+      const data = await api.getRecommendation(experiment.id);
+      setRecommendation(data);
+    } catch {
+      // Ignore — no ratings yet
+    }
+  }, [experiment.id]);
+
   useEffect(() => {
     loadStats();
     loadUploads();
+    api.getPlatformStatus()
+      .then((s) => setProlificEnabled(s.prolific_enabled))
+      .catch(() => setProlificEnabled(false));
   }, [loadStats, loadUploads]);
+
+  useEffect(() => {
+    if (prolificEnabled) {
+      loadRounds();
+      loadRecommendation();
+    }
+  }, [prolificEnabled, loadRounds, loadRecommendation]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,21 +159,43 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       setSuccess('Study published on Prolific!');
       setTimeout(() => setSuccess(null), 3000);
       onRefresh();
+      await loadRounds();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to publish study');
     }
   };
 
-  const getRaterLink = () => {
-    const baseUrl = window.location.origin;
-    return `${baseUrl}/rate?experiment_id=${experiment.id}&PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`;
+  const handleRunPilot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.runPilotStudy(experiment.id, pilotForm);
+      setSuccess('Pilot study created on Prolific! Publish it when ready.');
+      setTimeout(() => setSuccess(null), 4000);
+      onRefresh();
+      await loadRounds();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create pilot study');
+    }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setSuccess('Copied to clipboard!');
-    setTimeout(() => setSuccess(null), 2000);
+  const handleRunRound = async () => {
+    if (!recommendation) return;
+    const places = recommendation.recommended_places;
+    if (!window.confirm(`Launch a new round with ${places} Prolific places?`)) return;
+    setError(null);
+    try {
+      await api.runStudyRound(experiment.id, places);
+      setSuccess('New study round created on Prolific! Publish it when ready.');
+      setTimeout(() => setSuccess(null), 4000);
+      onRefresh();
+      await loadRounds();
+      await loadRecommendation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create study round');
+    }
   };
+
 
   if (showAnalytics) {
     return (
@@ -427,99 +487,174 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
             </div>
           </div>
 
-          {/* Prolific Integration */}
-          <div style={styles.section}>
-            <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Prolific Integration</h2>
-            </div>
-            <div style={styles.sectionBody}>
-              {experiment.prolific_study_id ? (
-                <>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Prolific Study ID</label>
-                    <input
-                      type="text"
-                      value={experiment.prolific_study_id}
-                      readOnly
-                      onClick={(e) => {
-                        (e.target as HTMLInputElement).select();
-                        copyToClipboard(experiment.prolific_study_id!);
-                      }}
-                      style={styles.input}
-                    />
-                  </div>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Study Status</label>
-                    <div>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        background: experiment.prolific_study_status === 'ACTIVE' ? '#d4edda' : '#fff3cd',
-                        color: experiment.prolific_study_status === 'ACTIVE' ? '#155724' : '#856404',
+          {/* Prolific Study Rounds */}
+          {prolificEnabled && (
+            <div style={styles.section}>
+              <div style={styles.sectionHeader}>
+                <h2 style={styles.sectionTitle}>Prolific Study Rounds</h2>
+              </div>
+              <div style={styles.sectionBody}>
+                {/* Preview link always available */}
+                <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
+                  <button
+                    onClick={() => {
+                      const previewId = `preview_${Date.now()}`;
+                      const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
+                      window.open(url, '_blank');
+                    }}
+                    style={styles.secondaryButton}
+                  >
+                    Preview as Participant
+                  </button>
+                </div>
+
+                {/* Existing rounds list */}
+                {rounds.length > 0 && (
+                  <div style={{ marginBottom: '20px' }}>
+                    {rounds.map((round) => (
+                      <div key={round.id} style={{
+                        padding: '12px',
+                        background: '#f8f9fa',
+                        borderRadius: '6px',
+                        marginBottom: '8px',
+                        border: '1px solid #e0e0e0',
                       }}>
-                        {experiment.prolific_study_status}
-                      </span>
-                    </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                              {round.is_pilot ? 'Pilot Study' : `Round ${round.round_number}`}
+                            </span>
+                            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
+                              {round.places_requested} places
+                            </span>
+                          </div>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: round.prolific_study_status === 'ACTIVE' ? '#d4edda'
+                              : round.prolific_study_status === 'COMPLETED' ? '#d1ecf1'
+                              : '#fff3cd',
+                            color: round.prolific_study_status === 'ACTIVE' ? '#155724'
+                              : round.prolific_study_status === 'COMPLETED' ? '#0c5460'
+                              : '#856404',
+                          }}>
+                            {round.prolific_study_status}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <button
+                            onClick={() => window.open(round.prolific_study_url, '_blank')}
+                            style={{ ...styles.secondaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
+                          >
+                            Open on Prolific
+                          </button>
+                          {round.prolific_study_status === 'UNPUBLISHED' && (
+                            <button
+                              onClick={handlePublishProlific}
+                              style={{ ...styles.primaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
+                            >
+                              Publish
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => {
-                        window.open(experiment.prolific_study_url!, '_blank');
-                      }}
-                      style={styles.secondaryButton}
-                    >
-                      Open on Prolific
-                    </button>
-                    <button
-                      onClick={() => {
-                        const previewId = `preview_${Date.now()}`;
-                        const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
-                        window.open(url, '_blank');
-                      }}
-                      style={styles.secondaryButton}
-                    >
-                      Preview as Participant
-                    </button>
-                    {experiment.prolific_study_status === 'UNPUBLISHED' && (
-                      <button onClick={handlePublishProlific} style={styles.primaryButton}>
-                        Publish on Prolific
-                      </button>
+                )}
+
+                {/* Recommendation panel (when pilot has data) */}
+                {recommendation && recommendation.avg_time_per_question_seconds > 0 && (
+                  <div style={{
+                    padding: '12px',
+                    background: recommendation.is_complete ? '#d4edda' : '#f0f7ff',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    fontSize: '13px',
+                  }}>
+                    {recommendation.is_complete ? (
+                      <strong style={{ color: '#155724' }}>All questions have enough ratings!</strong>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: '6px' }}>
+                          <strong>Recommendation for next round</strong>
+                        </div>
+                        <div style={{ color: '#444', lineHeight: 1.6 }}>
+                          Avg time/question: <strong>{recommendation.avg_time_per_question_seconds.toFixed(0)}s</strong>
+                          {' · '}Remaining actions: <strong>{recommendation.remaining_rating_actions}</strong>
+                          {' · '}Hours left: <strong>{recommendation.total_hours_remaining.toFixed(1)}</strong>
+                        </div>
+                        <button
+                          onClick={handleRunRound}
+                          style={{ ...styles.primaryButton, marginTop: '10px', width: 'auto', padding: '8px 16px' }}
+                        >
+                          Launch Round {rounds.filter(r => !r.is_pilot).length + 1} ({recommendation.recommended_places} places)
+                        </button>
+                      </>
                     )}
                   </div>
-                </>
-              ) : (
-                <div style={styles.inputGroup}>
-                  <label style={styles.label}>Study URL</label>
-                  <input
-                    type="text"
-                    value={getRaterLink()}
-                    readOnly
-                    onClick={(e) => {
-                      (e.target as HTMLInputElement).select();
-                      copyToClipboard(getRaterLink());
-                    }}
-                    style={styles.input}
-                  />
-                  <div style={styles.hint}>Click to copy. Use this as your study URL in Prolific.</div>
-                </div>
-              )}
-              {experiment.prolific_completion_url && (
-                <div style={{ ...styles.inputGroup, marginTop: experiment.prolific_study_id ? '0' : undefined }}>
-                  <label style={styles.label}>Completion URL</label>
-                  <input
-                    type="text"
-                    value={experiment.prolific_completion_url}
-                    readOnly
-                    style={styles.input}
-                  />
-                  <div style={styles.hint}>Raters redirect here when finished.</div>
-                </div>
-              )}
+                )}
+
+                {/* Pilot form — shown when no pilot exists yet */}
+                {rounds.length === 0 && (
+                  <form onSubmit={handleRunPilot}>
+                    <div style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>
+                      Run a small pilot study to measure how long raters take per question. This data drives automatic sizing of subsequent rounds.
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Study Description</label>
+                      <textarea
+                        value={pilotForm.description}
+                        onChange={(e) => setPilotForm({ ...pilotForm, description: e.target.value })}
+                        placeholder="Describe the task for Prolific participants..."
+                        required
+                        style={{ ...styles.input, minHeight: '80px', resize: 'vertical' as const }}
+                      />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Estimated Completion Time (minutes)</label>
+                      <input
+                        type="number"
+                        value={pilotForm.estimated_completion_time}
+                        onChange={(e) => setPilotForm({ ...pilotForm, estimated_completion_time: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Reward (cents)</label>
+                      <input
+                        type="number"
+                        value={pilotForm.reward}
+                        onChange={(e) => setPilotForm({ ...pilotForm, reward: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
+                        style={styles.input}
+                      />
+                      <div style={styles.hint}>Payment in cents (e.g., 900 = $9.00)</div>
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Pilot Hours (# of raters)</label>
+                      <input
+                        type="number"
+                        value={pilotForm.pilot_hours}
+                        onChange={(e) => setPilotForm({ ...pilotForm, pilot_hours: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
+                        style={styles.input}
+                      />
+                      <div style={styles.hint}>Each rater does 1 hour. 5 is a good default for timing calibration.</div>
+                    </div>
+                    <button type="submit" style={styles.primaryButton}>
+                      Run Pilot Study
+                    </button>
+                  </form>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Danger Zone */}
           <div style={{ ...styles.section, ...styles.dangerSection }}>

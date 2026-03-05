@@ -13,6 +13,39 @@ class ProlificStudyConfig(BaseModel):
     device_compatibility: list[str] = Field(default_factory=lambda: ["desktop"])
 
 
+class PilotStudyCreate(BaseModel):
+    description: str
+    estimated_completion_time: int
+    reward: int
+    pilot_hours: int = 5
+    device_compatibility: list[str] = Field(default_factory=lambda: ["desktop"])
+
+
+class StudyRoundCreate(BaseModel):
+    places: int
+
+
+class RecommendationResponse(BaseModel):
+    avg_time_per_question_seconds: float
+    remaining_rating_actions: int
+    total_hours_remaining: float
+    recommended_places: int
+    is_complete: bool
+
+
+class StudyRoundResponse(BaseModel):
+    id: int
+    round_number: int
+    is_pilot: bool
+    prolific_study_id: str
+    prolific_study_status: str
+    places_requested: int
+    created_at: datetime
+    prolific_study_url: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
 
