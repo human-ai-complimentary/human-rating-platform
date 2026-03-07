@@ -44,8 +44,8 @@ function RaterView() {
   const startedRef = useRef(false);
 
   useEffect(() => {
-    if (!experimentId || !prolificId) {
-      setError('Missing experiment_id or PROLIFIC_PID in URL');
+    if (!experimentId || !prolificId || !studyId || !sessionId) {
+      setError('Please access this study from Prolific.');
       setLoading(false);
       return;
     }

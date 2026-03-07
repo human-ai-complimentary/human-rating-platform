@@ -22,8 +22,8 @@ router = APIRouter(prefix="/raters", tags=["raters"])
 async def start_session(
     experiment_id: int = Query(...),
     PROLIFIC_PID: str = Query(...),
-    STUDY_ID: Optional[str] = Query(None),
-    SESSION_ID: Optional[str] = Query(None),
+    STUDY_ID: str = Query(...),
+    SESSION_ID: str = Query(...),
     preview: bool = Query(False),
     db: AsyncSession = Depends(get_session),
 ):

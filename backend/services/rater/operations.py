@@ -52,8 +52,8 @@ async def start_session(
     *,
     experiment_id: int,
     prolific_pid: str,
-    study_id: Optional[str],
-    session_id: Optional[str],
+    study_id: str,
+    session_id: str,
     is_preview: bool = False,
     db: AsyncSession,
 ) -> RaterStartResponse:

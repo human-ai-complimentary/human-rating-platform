@@ -238,6 +238,8 @@ def test_start_session_rejects_after_end_session(client: TestClient):
         params={
             "experiment_id": experiment["id"],
             "PROLIFIC_PID": "PID_DONE",
+            "STUDY_ID": "STUDY_1",
+            "SESSION_ID": "SESSION_PID_DONE",
         },
     )
 
