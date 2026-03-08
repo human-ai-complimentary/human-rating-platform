@@ -8,6 +8,7 @@ import type { Session, Question } from '../types';
 function RaterView() {
   const [searchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const [questionsCompleted, setQuestionsCompleted] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -21,10 +22,10 @@ function RaterView() {
   const sessionId = searchParams.get('SESSION_ID');
   const isPreview = searchParams.get('preview') === 'true';
 
-  const loadNextQuestion = useCallback(async (raterId: number) => {
+  const loadNextQuestion = useCallback(async (token: string) => {
     try {
       setLoading(true);
-      const q = await api.getNextQuestion(raterId);
+      const q = await api.getNextQuestion(token);
       if (q === null || (typeof q === 'object' && Object.keys(q).length === 0)) {
         setAllDone(true);
       } else {
@@ -58,7 +59,16 @@ function RaterView() {
     api.startSession(experimentId, prolificId, studyId, sessionId, isPreview)
       .then(data => {
         setSession(data);
-        return loadNextQuestion(data.rater_id);
+        setSessionToken(data.rater_session_token);
+        // Remove Prolific params from URL after starting session
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('PROLIFIC_PID');
+          url.searchParams.delete('STUDY_ID');
+          url.searchParams.delete('SESSION_ID');
+          window.history.replaceState({}, '', url.toString());
+        } catch {}
+        return loadNextQuestion(data.rater_session_token);
       })
       .catch(err => {
         setError(err.message);
@@ -78,17 +88,17 @@ function RaterView() {
   }, [sessionExpired, allDone, session?.completion_url]);
 
   const handleSubmit = async (answer: string, confidence: number, timeStarted: string) => {
-    if (!session || !question) return;
+    if (!session || !question || !sessionToken) return;
 
     try {
-      await api.submitRating(session.rater_id, {
+      await api.submitRating(sessionToken, {
         question_id: question.id,
         answer,
         confidence,
         time_started: timeStarted,
       });
       setQuestionsCompleted(prev => prev + 1);
-      await loadNextQuestion(session.rater_id);
+      await loadNextQuestion(sessionToken);
     } catch (err) {
       if (err instanceof Error && err.message === 'Session expired') {
         setSessionExpired(true);
@@ -269,10 +279,7 @@ function RaterView() {
           Preview mode — ratings submitted here are real and will appear in your data.
         </div>
       )}
-      <Timer
-        sessionEndTime={session.session_end_time}
-        onExpire={handleSessionExpired}
-      />
+      <Timer sessionEndTime={session.session_end_time} onExpire={handleSessionExpired} />
 
       <div style={styles.header}>
         <h2 style={styles.experimentName}>{session.experiment_name}</h2>
