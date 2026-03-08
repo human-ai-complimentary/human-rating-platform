@@ -402,12 +402,12 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     ).json()
 
     submit_response = client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json={
             "question_id": question["id"],
             "answer": "Yes",
