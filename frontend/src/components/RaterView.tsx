@@ -67,7 +67,10 @@ function RaterView() {
           url.searchParams.delete('STUDY_ID');
           url.searchParams.delete('SESSION_ID');
           window.history.replaceState({}, '', url.toString());
-        } catch {}
+        } catch (err) {
+          // Ignore failures from URL/History APIs (e.g., older browsers)
+          void err;
+        }
         return loadNextQuestion(data.rater_session_token);
       })
       .catch(err => {

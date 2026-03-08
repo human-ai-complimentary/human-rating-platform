@@ -5,7 +5,6 @@ import hmac
 import json
 import time
 from hashlib import sha256
-from typing import Optional
 
 from fastapi import HTTPException
 
