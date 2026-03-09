@@ -191,8 +191,10 @@ function AdminView() {
           <div style={styles.sectionBody}>
             <form onSubmit={handleCreateExperiment}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Experiment Name</label>
+                <label htmlFor="experiment-name" style={styles.label}>Experiment Name</label>
                 <input
+                  id="experiment-name"
+                  data-testid="experiment-name-input"
                   type="text"
                   value={newExperiment.name}
                   onChange={(e) => setNewExperiment({ ...newExperiment, name: e.target.value })}
@@ -202,8 +204,10 @@ function AdminView() {
                 />
               </div>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Ratings per Question</label>
+                <label htmlFor="ratings-per-question" style={styles.label}>Ratings per Question</label>
                 <input
+                  id="ratings-per-question"
+                  data-testid="ratings-per-question-input"
                   type="number"
                   value={newExperiment.num_ratings_per_question}
                   onChange={(e) => setNewExperiment({ ...newExperiment, num_ratings_per_question: parseInt(e.target.value) })}

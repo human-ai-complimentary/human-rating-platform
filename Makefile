@@ -3,6 +3,8 @@ SHELL := /bin/sh
 .PHONY: help env.sync up down ps logs db.clear db.reset db.new db.up db.down db.seed test config.check fmt tailscale.up tailscale.down tailscale.status
 
 COMPOSE ?= docker compose
+TEST_COMPOSE_PROJECT ?= human-rating-platform-test
+COMPOSE_TEST = $(COMPOSE) -p $(TEST_COMPOSE_PROJECT)
 TEST_PROFILE ?= test
 TEST_SERVICE ?= e2e
 KEEP_TEST_STACK ?= 0
@@ -154,17 +156,18 @@ db.seed: ## Seed local dataset from backend/config.toml
 test: ## Run characterization tests with DB+migrations as dependencies
 	$(call _title,==> Running characterization tests)
 	$(call _info,Using docker compose profile: $(TEST_PROFILE))
+	$(call _info,Using isolated compose project: $(TEST_COMPOSE_PROJECT))
 	$(call _info,Preparing db)
 	@set +e; \
-	$(COMPOSE) --profile $(TEST_PROFILE) up -d db > /dev/null; \
-	until $(COMPOSE) --profile $(TEST_PROFILE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done; \
+	$(COMPOSE_TEST) --profile $(TEST_PROFILE) up -d db > /dev/null; \
+	until $(COMPOSE_TEST) --profile $(TEST_PROFILE) exec -T db pg_isready -U postgres -d human_rating_platform > /dev/null 2>&1; do sleep 1; done; \
 	printf "$(C_INFO)::$(C_RESET) Applying migrations synchronously\n"; \
-	$(COMPOSE) --profile $(TEST_PROFILE) run --rm --no-deps migrate > /dev/null; \
+	$(COMPOSE_TEST) --profile $(TEST_PROFILE) run --rm --no-deps migrate > /dev/null; \
 	printf "$(C_INFO)::$(C_RESET) Executing test service: $(TEST_SERVICE)\n"; \
-	$(COMPOSE) --profile $(TEST_PROFILE) run --rm --no-deps $(TEST_SERVICE); \
+	$(COMPOSE_TEST) --profile $(TEST_PROFILE) run --rm --no-deps $(TEST_SERVICE); \
 	exit_code=$$?; \
 	if [ "$(KEEP_TEST_STACK)" != "1" ]; then \
-		$(COMPOSE) --profile $(TEST_PROFILE) down --remove-orphans > /dev/null; \
+		$(COMPOSE_TEST) --profile $(TEST_PROFILE) down --remove-orphans > /dev/null; \
 	else \
 		printf "$(C_WARN)!!$(C_RESET) Keeping compose test stack up (KEEP_TEST_STACK=1)\n"; \
 	fi; \

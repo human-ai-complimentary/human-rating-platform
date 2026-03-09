@@ -486,6 +486,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     </div>
                     <div style={styles.toggle}>
                       <div
+                        data-testid="include-preview-toggle"
                         style={{
                           ...styles.toggleTrack,
                           background: includePreview ? '#4a90d9' : '#ddd',
@@ -504,7 +505,12 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     <button style={styles.primaryButton} onClick={() => setShowAnalytics(true)}>
                       View Analytics
                     </button>
-                    <a href={api.getExportUrl(experiment.id, { includePreview })} download style={{ flex: 1 }}>
+                    <a
+                      data-testid="export-link"
+                      href={api.getExportUrl(experiment.id, { includePreview })}
+                      download
+                      style={{ flex: 1 }}
+                    >
                       <button style={{ ...styles.secondaryButton, width: '100%' }}>
                         Export CSV
                       </button>
@@ -525,6 +531,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                 {/* Preview link always available */}
                 <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
                   <button
+                    data-testid="preview-participant-button"
                     onClick={() => {
                       const previewId = `preview_${Date.now()}`;
                       const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
@@ -538,7 +545,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
 
                 {/* Existing rounds list */}
                 {rounds.length > 0 && (
-                  <div style={{ marginBottom: '20px' }}>
+                  <div data-testid="study-rounds-list" style={{ marginBottom: '20px' }}>
                     {rounds.map((round) => (
                       <div key={round.id} style={{
                         padding: '12px',
@@ -581,6 +588,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                           {round.prolific_study_status === 'UNPUBLISHED' &&
                             round.prolific_study_id === experiment.prolific_study_id && (
                             <button
+                              data-testid={`publish-round-${round.round_number}`}
                               onClick={handlePublishProlific}
                               disabled={isPublishing}
                               style={{ ...styles.primaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
@@ -596,7 +604,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
 
                 {/* Recommendation panel (when pilot has data) */}
                 {recommendation && recommendation.avg_time_per_question_seconds > 0 && (
-                  <div style={{
+                  <div data-testid="recommendation-panel" style={{
                     padding: '12px',
                     background: recommendation.is_complete ? '#d4edda' : '#f0f7ff',
                     borderRadius: '6px',
@@ -616,6 +624,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                           {' · '}Hours left: <strong>{recommendation.total_hours_remaining.toFixed(1)}</strong>
                         </div>
                         <button
+                          data-testid="launch-round-button"
                           onClick={handleRunRound}
                           style={{ ...styles.primaryButton, marginTop: '10px', width: 'auto', padding: '8px 16px' }}
                         >
@@ -633,8 +642,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       Run a small pilot study to measure how long raters take per question. This data drives automatic sizing of subsequent rounds.
                     </div>
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Study Description</label>
+                      <label htmlFor="pilot-description" style={styles.label}>Study Description</label>
                       <textarea
+                        id="pilot-description"
+                        data-testid="pilot-description-input"
                         value={pilotForm.description}
                         onChange={(e) => setPilotForm({ ...pilotForm, description: e.target.value })}
                         placeholder="Describe the task for Prolific participants..."
@@ -643,8 +654,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       />
                     </div>
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Estimated Completion Time (minutes)</label>
+                      <label htmlFor="pilot-estimated-completion-time" style={styles.label}>Estimated Completion Time (minutes)</label>
                       <input
+                        id="pilot-estimated-completion-time"
+                        data-testid="pilot-estimated-completion-time-input"
                         type="number"
                         value={pilotForm.estimated_completion_time}
                         onChange={(e) => setPilotForm({ ...pilotForm, estimated_completion_time: parseInt(e.target.value) || 0 })}
@@ -654,8 +667,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       />
                     </div>
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Reward (cents)</label>
+                      <label htmlFor="pilot-reward" style={styles.label}>Reward (cents)</label>
                       <input
+                        id="pilot-reward"
+                        data-testid="pilot-reward-input"
                         type="number"
                         value={pilotForm.reward}
                         onChange={(e) => setPilotForm({ ...pilotForm, reward: parseInt(e.target.value) || 0 })}
@@ -666,8 +681,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       <div style={styles.hint}>Payment in cents (e.g., 900 = $9.00)</div>
                     </div>
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Pilot Hours (# of raters)</label>
+                      <label htmlFor="pilot-hours" style={styles.label}>Pilot Hours (# of raters)</label>
                       <input
+                        id="pilot-hours"
+                        data-testid="pilot-hours-input"
                         type="number"
                         value={pilotForm.pilot_hours}
                         onChange={(e) => setPilotForm({ ...pilotForm, pilot_hours: parseInt(e.target.value) || 0 })}
@@ -677,7 +694,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       />
                       <div style={styles.hint}>Each rater does 1 hour. 5 is a good default for timing calibration.</div>
                     </div>
-                    <button type="submit" style={styles.primaryButton}>
+                    <button data-testid="run-pilot-button" type="submit" style={styles.primaryButton}>
                       Run Pilot Study
                     </button>
                   </form>
@@ -687,6 +704,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                   <div style={{ ...styles.inputGroup, marginTop: rounds.length === 0 ? '16px' : '0' }}>
                     <label style={styles.label}>Completion URL</label>
                     <input
+                      data-testid="completion-url-input"
                       type="text"
                       value={experiment.prolific_completion_url}
                       readOnly
@@ -747,8 +765,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
               {/* Upload form */}
               <form onSubmit={handleUpload}>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Add Questions from CSV</label>
+                  <label htmlFor="upload-csv" style={styles.label}>Add Questions from CSV</label>
                   <input
+                    id="upload-csv"
+                    data-testid="upload-csv-input"
                     type="file"
                     accept=".csv"
                     onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
@@ -759,6 +779,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                   </div>
                 </div>
                 <button
+                  data-testid="upload-csv-button"
                   type="submit"
                   disabled={!uploadFile}
                   style={{

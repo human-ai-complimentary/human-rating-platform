@@ -1,10 +1,19 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser, useAuth, UserButton } from '@clerk/clerk-react';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
 import { api } from './api';
+import {
+  isE2eAuthBypassed,
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  useAuth,
+  useUser,
+  UserButton,
+} from './auth';
 
 function App() {
   return (
@@ -105,6 +114,10 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   React.useEffect(() => {
     if (!isLoaded) return; // wait for Clerk to load
     if (!isSignedIn) return; // SignedOut wrapper handles this
+    if (isE2eAuthBypassed()) {
+      setState('ok');
+      return;
+    }
 
     let cancelled = false;
     const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
@@ -191,6 +204,9 @@ function InfoCard({ title, body, align = 'center' }: InfoCardProps) {
 
 function BackendLogoutOnSignedOut() {
   React.useEffect(() => {
+    if (isE2eAuthBypassed()) {
+      return;
+    }
     void api.adminLogout().catch(() => {});
   }, []);
   return null;

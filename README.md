@@ -269,6 +269,46 @@ Frontend env (`frontend/.env`):
   - **Local dev (default):** empty → frontend uses same-origin `/api` via Vite proxy
   - **Render example:** `https://human-rating-platform-api-uxnt.onrender.com`
 
+## End-To-End Testing
+
+This project uses three complementary end-to-end testing layers:
+
+- `make test` runs the backend characterization suite against a real Postgres database with Alembic migrations applied. It exercises the API and service layer, including experiment creation, CSV uploads, rater sessions, analytics, exports, and Prolific study management with mocked Prolific HTTP responses.
+- `cd frontend && npm run test:e2e` runs Playwright browser smoke tests against the local frontend. These tests mock `/api` responses and verify key admin and rater flows in the UI.
+- A small number of Prolific-facing checks remain manual because they depend on an external platform, human participation, and spending real money.
+
+Together, these layers provide good coverage of the local application behavior while keeping external dependencies out of automated test runs.
+
+### Browser Smoke Coverage
+
+The Playwright suite starts the frontend with `VITE_E2E_BYPASS_AUTH=true`. This bypasses Clerk only for the smoke harness so the tests can focus on application behavior without changing the production authentication flow.
+
+The current browser smoke tests verify:
+
+- creating an experiment from the admin dashboard
+- navigating from experiment creation to the detail page
+- uploading a CSV and seeing the upload summary update
+- showing the pilot form before any Prolific rounds exist
+- creating a pilot round and rendering the resulting round history
+- showing recommendation data after the pilot flow returns it
+- limiting the publish action to the currently linked unpublished round
+- launching a follow-on round and appending it to round history
+- opening the preview participant flow with `preview=true`
+- updating export and stats requests when include-preview is enabled
+
+### Manual Prolific Checklist
+
+Use the following checklist when validating a real study against Prolific:
+
+1. Create an experiment from `/admin` with the intended name and ratings-per-question.
+2. Upload the CSV on the experiment detail page and confirm the question count matches the file.
+3. In `Prolific Study Rounds`, complete the pilot form and click `Run Pilot Study`. The default pilot size is `5` raters and is usually a reasonable starting point.
+4. Open the draft on Prolific and review the study details before publishing.
+5. Publish the draft manually on Prolific when you are ready for participants to start.
+6. Wait for the pilot to complete, then review the recommendation panel. If the reported average time per question looks implausible, investigate before launching another round.
+7. Launch the next round from the recommendation panel, publish it manually on Prolific, and wait for completion.
+8. Repeat until the application reports `All questions have enough ratings!`.
+
 ---
 
 ## Tailscale (optional)
