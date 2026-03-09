@@ -13,12 +13,14 @@ import string
 
 import httpx
 
-from config import ProlificSettings
+from config import ProlificMode, ProlificSettings
 
 logger = logging.getLogger(__name__)
 
 COMPLETION_CODE_LENGTH = 8
 COMPLETION_URL_TEMPLATE = "https://app.prolific.com/submissions/complete?cc={code}"
+REAL_STUDY_URL_TEMPLATE = "https://app.prolific.com/researcher/workspaces/studies/{study_id}"
+FAKE_STUDY_URL_TEMPLATE = "{site_url}/admin/prolific/fake-studies/{study_id}"
 
 
 def generate_completion_code() -> str:
@@ -30,6 +32,22 @@ def build_completion_url(code: str) -> str:
     return COMPLETION_URL_TEMPLATE.format(code=code)
 
 
+def build_external_study_url(*, site_url: str, experiment_id: int) -> str:
+    return (
+        f"{site_url}/rate"
+        f"?experiment_id={experiment_id}"
+        f"&PROLIFIC_PID={{{{%PROLIFIC_PID%}}}}"
+        f"&STUDY_ID={{{{%STUDY_ID%}}}}"
+        f"&SESSION_ID={{{{%SESSION_ID%}}}}"
+    )
+
+
+def build_study_url(*, settings: ProlificSettings, site_url: str, study_id: str) -> str:
+    if settings.mode == ProlificMode.FAKE:
+        return FAKE_STUDY_URL_TEMPLATE.format(site_url=site_url.rstrip("/"), study_id=study_id)
+    return REAL_STUDY_URL_TEMPLATE.format(study_id=study_id)
+
+
 def _build_client(settings: ProlificSettings) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=settings.base_url,
@@ -38,7 +56,7 @@ def _build_client(settings: ProlificSettings) -> httpx.AsyncClient:
     )
 
 
-async def create_study(
+async def _create_real_study(
     *,
     settings: ProlificSettings,
     name: str,
@@ -74,7 +92,7 @@ async def create_study(
         return response.json()
 
 
-async def publish_study(
+async def _publish_real_study(
     *,
     settings: ProlificSettings,
     study_id: str,
@@ -88,7 +106,7 @@ async def publish_study(
         return response.json()
 
 
-async def delete_study(
+async def _delete_real_study(
     *,
     settings: ProlificSettings,
     study_id: str,
@@ -99,3 +117,75 @@ async def delete_study(
             logger.warning("Prolific study %s already deleted (404)", study_id)
             return
         response.raise_for_status()
+
+
+def _build_fake_study_id() -> str:
+    return f"fake-study-{secrets.token_hex(6)}"
+
+
+async def create_study(
+    *,
+    settings: ProlificSettings,
+    name: str,
+    description: str,
+    external_study_url: str,
+    estimated_completion_time: int,
+    reward: int,
+    total_available_places: int,
+    completion_code: str,
+    device_compatibility: list[str] | None = None,
+) -> dict[str, str]:
+    if settings.mode == ProlificMode.FAKE:
+        return {
+            "id": _build_fake_study_id(),
+            "status": "UNPUBLISHED",
+        }
+
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("create_study called while Prolific mode is disabled")
+
+    return await _create_real_study(
+        settings=settings,
+        name=name,
+        description=description,
+        external_study_url=external_study_url,
+        estimated_completion_time=estimated_completion_time,
+        reward=reward,
+        total_available_places=total_available_places,
+        completion_code=completion_code,
+        device_compatibility=device_compatibility,
+    )
+
+
+async def publish_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> dict[str, str]:
+    if settings.mode == ProlificMode.FAKE:
+        return {"id": study_id, "status": "ACTIVE"}
+
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("publish_study called while Prolific mode is disabled")
+
+    return await _publish_real_study(
+        settings=settings,
+        study_id=study_id,
+    )
+
+
+async def delete_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> None:
+    if settings.mode == ProlificMode.FAKE:
+        return
+
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("delete_study called while Prolific mode is disabled")
+
+    await _delete_real_study(
+        settings=settings,
+        study_id=study_id,
+    )

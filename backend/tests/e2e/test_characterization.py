@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import text
 
-from config import get_settings
+from config import ProlificMode, get_settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -388,7 +388,7 @@ def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync
         chunks = list(response.iter_text())
 
     assert len(chunks) >= 1
-
+ 
     parsed_rows = list(csv.reader(io.StringIO("".join(chunks))))
     assert parsed_rows[0][0] == "rating_id"
     assert len(parsed_rows) == row_count + 1
@@ -510,9 +510,24 @@ FAKE_STUDY_ID = "65abc123def456"
 def enable_prolific():
     """Temporarily enable Prolific by setting an API token on the cached settings."""
     settings = get_settings()
+    original_mode = settings.prolific.mode
     original = settings.prolific.api_token
+    settings.prolific.mode = ProlificMode.REAL
     settings.prolific.api_token = "test-token"
     yield settings
+    settings.prolific.mode = original_mode
+    settings.prolific.api_token = original
+
+
+@pytest.fixture()
+def enable_fake_prolific():
+    settings = get_settings()
+    original_mode = settings.prolific.mode
+    original = settings.prolific.api_token
+    settings.prolific.mode = ProlificMode.FAKE
+    settings.prolific.api_token = ""
+    yield settings
+    settings.prolific.mode = original_mode
     settings.prolific.api_token = original
 
 
@@ -539,9 +554,9 @@ def _mock_create_study(*, status: int = 200, study_id: str = FAKE_STUDY_ID) -> r
     return respx.post(f"{PROLIFIC_BASE}/studies/").mock(return_value=Response(status, json=body))
 
 
-def _mock_publish_study() -> respx.Route:
-    return respx.post(f"{PROLIFIC_BASE}/studies/{FAKE_STUDY_ID}/transition/").mock(
-        return_value=Response(200, json={"id": FAKE_STUDY_ID, "status": "ACTIVE"})
+def _mock_publish_study(*, study_id: str = FAKE_STUDY_ID) -> respx.Route:
+    return respx.post(f"{PROLIFIC_BASE}/studies/{study_id}/transition/").mock(
+        return_value=Response(200, json={"id": study_id, "status": "ACTIVE"})
     )
 
 
@@ -558,6 +573,19 @@ def _create_prolific_experiment(client: TestClient) -> tuple[dict, dict]:
     experiment = create_resp.json()
 
     _mock_create_study()
+    pilot_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
+    assert pilot_resp.status_code == 200, pilot_resp.text
+    return experiment, pilot_resp.json()
+
+
+def _create_fake_prolific_experiment(client: TestClient) -> tuple[dict, dict]:
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
     pilot_resp = client.post(
         f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
         json=_pilot_payload(),
@@ -770,15 +798,101 @@ def test_platform_status_reflects_prolific_enabled(client: TestClient, enable_pr
     resp = client.get("/api/admin/platform-status")
     assert resp.status_code == 200
     assert resp.json()["prolific_enabled"] is True
+    assert resp.json()["prolific_mode"] == "real"
+
+
+def test_platform_status_reflects_fake_mode(client: TestClient, enable_fake_prolific):
+    resp = client.get("/api/admin/platform-status")
+    assert resp.status_code == 200
+    assert resp.json()["prolific_enabled"] is True
+    assert resp.json()["prolific_mode"] == "fake"
 
 
 def test_platform_status_disabled_by_default(client: TestClient):
     settings = get_settings()
+    original_mode = settings.prolific.mode
     original = settings.prolific.api_token
+    settings.prolific.mode = ProlificMode.DISABLED
     settings.prolific.api_token = ""
     try:
         resp = client.get("/api/admin/platform-status")
         assert resp.status_code == 200
         assert resp.json()["prolific_enabled"] is False
+        assert resp.json()["prolific_mode"] == "disabled"
     finally:
+        settings.prolific.mode = original_mode
         settings.prolific.api_token = original
+
+
+def test_fake_prolific_create_stores_local_study_url(client: TestClient, enable_fake_prolific):
+    experiment, pilot = _create_fake_prolific_experiment(client)
+
+    assert pilot["prolific_study_id"].startswith("fake-study-")
+    assert pilot["prolific_study_status"] == "UNPUBLISHED"
+    assert pilot["prolific_study_url"].endswith(f"/admin/prolific/fake-studies/{pilot['prolific_study_id']}")
+
+    experiments = client.get("/api/admin/experiments").json()
+    stored = next(item for item in experiments if item["id"] == experiment["id"])
+    assert stored["prolific_study_id"] == pilot["prolific_study_id"]
+    assert stored["prolific_study_url"].endswith(f"/admin/prolific/fake-studies/{pilot['prolific_study_id']}")
+
+
+def test_fake_prolific_publish_updates_status_and_round(client: TestClient, enable_fake_prolific):
+    experiment, pilot = _create_fake_prolific_experiment(client)
+
+    resp = client.post(f"/api/admin/experiments/{experiment['id']}/prolific/publish")
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ACTIVE"
+
+    rounds = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds").json()
+    assert rounds[0]["prolific_study_id"] == pilot["prolific_study_id"]
+    assert rounds[0]["prolific_study_status"] == "ACTIVE"
+
+
+def test_fake_prolific_round_creation_increments_and_lists_history(client: TestClient, enable_fake_prolific):
+    experiment, pilot = _create_fake_prolific_experiment(client)
+
+    first_round = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds",
+        json={"places": 4},
+    )
+    second_round = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds",
+        json={"places": 2},
+    )
+    rounds_resp = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds")
+
+    assert first_round.status_code == 200
+    assert second_round.status_code == 200
+
+    rounds = rounds_resp.json()
+    assert rounds[0]["prolific_study_id"] == pilot["prolific_study_id"]
+    assert [round_["round_number"] for round_ in rounds] == [0, 1, 2]
+    assert all(round_["prolific_study_id"].startswith("fake-study-") for round_ in rounds)
+
+
+def test_fake_prolific_delete_is_local_noop(client: TestClient, enable_fake_prolific):
+    experiment, _pilot = _create_fake_prolific_experiment(client)
+
+    resp = client.delete(f"/api/admin/experiments/{experiment['id']}")
+
+    assert resp.status_code == 200
+    experiments = client.get("/api/admin/experiments").json()
+    assert all(item["id"] != experiment["id"] for item in experiments)
+
+
+def test_fake_study_detail_returns_round_metadata(client: TestClient, enable_fake_prolific):
+    experiment, pilot = _create_fake_prolific_experiment(client)
+
+    resp = client.get(f"/api/admin/prolific/fake-studies/{pilot['prolific_study_id']}")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["study_id"] == pilot["prolific_study_id"]
+    assert payload["study_status"] == "UNPUBLISHED"
+    assert payload["experiment_id"] == experiment["id"]
+    assert payload["is_pilot"] is True
+    assert payload["description"] == _pilot_payload()["description"]
+    assert payload["external_study_url"].startswith("http://localhost:5173/rate?experiment_id=")
+    assert payload["completion_url"].startswith("https://app.prolific.com/submissions/complete?cc=")

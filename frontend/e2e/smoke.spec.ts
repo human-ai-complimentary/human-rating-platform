@@ -113,11 +113,16 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
 }
 
 async function installApiMocks(page: Page, state: MockState) {
-  await page.route('**/api/**', async (route) => {
+  await page.context().route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const { pathname, search } = url;
     const method = request.method();
+
+    if (pathname === '/api/v1/intercom/tokens/') {
+      await route.fulfill({ status: 204, body: '' });
+      return;
+    }
 
     if (pathname === '/api/admin/auth/logout') {
       await fulfillJson(route, 200, { ok: true });
@@ -125,7 +130,41 @@ async function installApiMocks(page: Page, state: MockState) {
     }
 
     if (pathname === '/api/admin/platform-status') {
-      await fulfillJson(route, 200, { prolific_enabled: true });
+      await fulfillJson(route, 200, { prolific_enabled: true, prolific_mode: 'fake' });
+      return;
+    }
+
+    if (pathname.startsWith('/api/admin/prolific/fake-studies/') && method === 'GET') {
+      const studyId = pathname.split('/').at(-1) ?? '';
+      const matchingRound = Object.values(state.rounds)
+        .flat()
+        .find((round) => round.prolific_study_id === studyId);
+      const experiment = matchingRound
+        ? state.experiments.find((item) =>
+            state.rounds[item.id]?.some((round) => round.prolific_study_id === matchingRound.prolific_study_id)
+          )
+        : undefined;
+      if (!matchingRound || !experiment) {
+        await fulfillJson(route, 404, { detail: 'Fake study not found' });
+        return;
+      }
+
+      await fulfillJson(route, 200, {
+        study_id: matchingRound.prolific_study_id,
+        study_status: matchingRound.prolific_study_status,
+        experiment_id: experiment.id,
+        experiment_name: experiment.name,
+        round_number: matchingRound.round_number,
+        is_pilot: matchingRound.is_pilot,
+        places_requested: matchingRound.places_requested,
+        description: 'Pilot description for smoke coverage',
+        estimated_completion_time: 60,
+        reward: 900,
+        device_compatibility: ['desktop'],
+        external_study_url: `${url.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}`,
+        completion_url: 'https://app.prolific.com/submissions/complete?cc=TEST1234',
+        created_at: matchingRound.created_at,
+      });
       return;
     }
 
@@ -234,7 +273,7 @@ async function installApiMocks(page: Page, state: MockState) {
         prolific_study_id: 'study-pilot-1',
         prolific_study_status: 'UNPUBLISHED',
         places_requested: payload.pilot_hours,
-        prolific_study_url: 'https://app.prolific.com/studies/study-pilot-1',
+        prolific_study_url: `${url.origin}/admin/prolific/fake-studies/study-pilot-1`,
       });
       state.rounds[experimentId] = [pilot];
       state.recommendations[experimentId] = {
@@ -280,7 +319,7 @@ async function installApiMocks(page: Page, state: MockState) {
         prolific_study_id: `study-round-${nextRoundNumber}`,
         prolific_study_status: 'UNPUBLISHED',
         places_requested: payload.places,
-        prolific_study_url: `https://app.prolific.com/studies/study-round-${nextRoundNumber}`,
+        prolific_study_url: `${url.origin}/admin/prolific/fake-studies/study-round-${nextRoundNumber}`,
       });
       state.rounds[experimentId] = [...(state.rounds[experimentId] || []), round];
       const experiment = state.experiments.find((item) => item.id === experimentId);
@@ -356,6 +395,7 @@ test('create experiment, upload CSV, run pilot, and launch a round', async ({ pa
   await expect(page.getByRole('heading', { name: 'Hour Breakdown Smoke Test' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Prolific Study Rounds' })).toBeVisible();
   await expect(page.getByTestId('run-pilot-button')).toBeVisible();
+  await expect(page.getByTestId('fake-prolific-notice')).toBeVisible();
 
   const csvPath = fileURLToPath(new URL('../../sample_questions.csv', import.meta.url));
   await page.getByTestId('upload-csv-input').setInputFiles(csvPath);
@@ -380,12 +420,21 @@ test('create experiment, upload CSV, run pilot, and launch a round', async ({ pa
     'https://app.prolific.com/submissions/complete?cc=TEST1234'
   );
 
+  const fakeStudyPromise = page.context().waitForEvent('page');
+  await page.getByRole('button', { name: 'Open Local Draft' }).click();
+  const fakeStudyPage = await fakeStudyPromise;
+  await fakeStudyPage.waitForLoadState('networkidle');
+  await expect(fakeStudyPage.getByTestId('fake-study-detail-page')).toBeVisible();
+  await expect(fakeStudyPage.getByText('Fake Study Review')).toBeVisible();
+  await expect(fakeStudyPage.getByText('Pilot description for smoke coverage')).toBeVisible();
+  await expect(fakeStudyPage.getByText('UNPUBLISHED')).toBeVisible();
+
   await page.getByTestId('publish-round-0').click();
   await expect(page.getByText('ACTIVE')).toBeVisible();
 
   await page.getByTestId('launch-round-button').click();
   await expect(page.getByText('Round 1')).toBeVisible();
-  await expect(page.getByText('4 places')).toBeVisible();
+  await expect(page.getByText('4 places', { exact: true })).toBeVisible();
 
   const exportLink = page.getByTestId('export-link');
   await expect(exportLink).toHaveAttribute('href', /\/api\/admin\/experiments\/1\/export$/);
@@ -428,7 +477,6 @@ test('preview participant link opens /rate with preview mode and starts one prev
   const popupPromise = context.waitForEvent('page');
   await page.getByTestId('preview-participant-button').click();
   const popup = await popupPromise;
-  await installApiMocks(popup, state);
   await popup.waitForLoadState('networkidle');
 
   await expect(popup).toHaveURL(/preview=true/);

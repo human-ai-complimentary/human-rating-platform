@@ -8,6 +8,7 @@ from .experiments import (
     list_experiments,
     publish_prolific_study,
 )
+from .fake_studies import get_fake_study_detail
 from .exports import build_export_filename, stream_export_csv_chunks
 from .rounds import calculate_recommendation, list_study_rounds, run_pilot_study, run_study_round
 from .uploads import list_uploads, upload_questions_csv
@@ -18,6 +19,7 @@ __all__ = [
     "create_experiment",
     "delete_experiment",
     "get_experiment_analytics",
+    "get_fake_study_detail",
     "get_experiment_stats",
     "list_experiments",
     "list_study_rounds",

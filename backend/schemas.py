@@ -3,6 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from config import ProlificMode
 from models import ProlificStudyStatus
 
 
@@ -54,6 +55,24 @@ class StudyRoundResponse(BaseModel):
 
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
+    prolific_mode: ProlificMode
+
+
+class FakeStudyDetailResponse(BaseModel):
+    study_id: str
+    study_status: ProlificStudyStatus
+    experiment_id: int
+    experiment_name: str
+    round_number: int
+    is_pilot: bool
+    places_requested: int
+    description: str
+    estimated_completion_time: int
+    reward: int
+    device_compatibility: list[Literal["desktop", "tablet", "mobile"]]
+    external_study_url: str
+    completion_url: Optional[str] = None
+    created_at: datetime
 
 
 # Experiment schemas

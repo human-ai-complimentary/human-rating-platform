@@ -26,7 +26,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [includePreview, setIncludePreview] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [prolificEnabled, setProlificEnabled] = useState(false);
+  const [prolificMode, setProlificMode] = useState<'disabled' | 'real' | 'fake'>('disabled');
   const [rounds, setRounds] = useState<StudyRound[]>([]);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [pilotForm, setPilotForm] = useState<PilotStudyCreate>({
@@ -98,16 +98,16 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     loadStats();
     loadUploads();
     api.getPlatformStatus()
-      .then((s) => setProlificEnabled(s.prolific_enabled))
-      .catch(() => setProlificEnabled(false));
+      .then((s) => setProlificMode(s.prolific_mode))
+      .catch(() => setProlificMode('disabled'));
   }, [loadStats, loadUploads]);
 
   useEffect(() => {
-    if (prolificEnabled) {
+    if (prolificMode !== 'disabled') {
       loadRounds();
       loadRecommendation();
     }
-  }, [prolificEnabled, loadRounds, loadRecommendation]);
+  }, [prolificMode, loadRounds, loadRecommendation]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -522,12 +522,27 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
           </div>
 
           {/* Prolific Study Rounds */}
-          {prolificEnabled && (
+          {prolificMode !== 'disabled' && (
             <div style={styles.section}>
               <div style={styles.sectionHeader}>
                 <h2 style={styles.sectionTitle}>Prolific Study Rounds</h2>
               </div>
               <div style={styles.sectionBody}>
+                {prolificMode === 'fake' && (
+                  <div
+                    data-testid="fake-prolific-notice"
+                    style={{
+                      ...styles.warning,
+                      background: '#f0f7ff',
+                      border: '1px solid #4a90d9',
+                      color: '#0b5394',
+                    }}
+                  >
+                    Fake Prolific mode is enabled. Study drafts and publish actions stay local so
+                    you can rehearse the workflow without spending money.
+                  </div>
+                )}
+
                 {/* Preview link always available */}
                 <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
                   <button
@@ -583,7 +598,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                             onClick={() => window.open(round.prolific_study_url, '_blank')}
                             style={{ ...styles.secondaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
                           >
-                            Open on Prolific
+                            {prolificMode === 'fake' ? 'Open Local Draft' : 'Open on Prolific'}
                           </button>
                           {round.prolific_study_status === 'UNPUBLISHED' &&
                             round.prolific_study_id === experiment.prolific_study_id && (

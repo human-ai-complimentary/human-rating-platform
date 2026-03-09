@@ -253,6 +253,7 @@ Env keys use Pydantic's nested `__` delimiter for nested settings models:
 - `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
 - `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
 - `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
+- `PROLIFIC__MODE` — `disabled`, `real`, or `fake`
 - `PROLIFIC__API_TOKEN` — Prolific API token (optional; enables automated study management)
 - `APP__SITE_URL` — public frontend URL used to build Prolific study links (default: `http://localhost:5173`)
 
@@ -367,7 +368,8 @@ Set in repo → **Settings** → **Secrets and variables** → **Actions**:
 - `DATABASE__URL` — Render Postgres internal connection string
 - `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
 - `APP__SITE_URL` — public frontend URL, e.g. `https://human-rating-platform-web.onrender.com`
-- `PROLIFIC__API_TOKEN` — Prolific API token (optional; omit to use manual workflow)
+- `PROLIFIC__MODE` — `disabled`, `real`, or `fake`
+- `PROLIFIC__API_TOKEN` — Prolific API token (required only when `PROLIFIC__MODE=real`)
 
 **Web service** (set in Render Dashboard → Web service → Environment):
 - `VITE_API_HOST` — public API origin, e.g. `https://human-rating-platform-api-uxnt.onrender.com`
@@ -426,28 +428,39 @@ q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 
 ## Prolific Integration
 
-There are two modes, depending on whether `PROLIFIC__API_TOKEN` is set.
+The Prolific integration has three explicit modes controlled by `PROLIFIC__MODE`.
 
-### Automated (recommended)
+### Disabled
 
-Set `PROLIFIC__API_TOKEN` in `backend/.env` (or as an env var on your server). The platform will create, publish, and delete Prolific studies via their API.
+Set `PROLIFIC__MODE=disabled` to hide the Prolific study-round workflow entirely. This is useful when you want to use the platform without any Prolific-specific automation.
 
-1. **Create an experiment** in the admin UI — fill in the Prolific fields (description, reward, estimated time, number of places).
-2. **Upload questions** via CSV.
-3. The backend creates a **draft** study on Prolific automatically, with the correct study URL and completion code.
-4. **Preview** the rater experience using the "Preview as Participant" button.
-5. **Publish** the study from the experiment detail page when ready.
-6. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
+### Real
 
-### Manual (no API token)
+Set `PROLIFIC__MODE=real` and provide `PROLIFIC__API_TOKEN` to use the real Prolific API. In this mode, the platform creates, publishes, and deletes studies on Prolific.
 
-If `PROLIFIC__API_TOKEN` is not set, the Prolific fields are hidden and the platform works with manual URL copy-paste:
+Typical workflow:
 
 1. **Create an experiment** in the admin UI.
 2. **Upload questions** via CSV.
-3. **Copy the study URL** from the experiment detail page.
-4. **Paste it into Prolific** as the external study URL (Prolific Dashboard → Study → Study Link).
-5. **Set the completion URL** in the experiment — this is where raters are redirected after finishing.
+3. In **Prolific Study Rounds**, enter the pilot details and click **Run Pilot Study**.
+4. The backend creates a **draft** study on Prolific with the correct study URL and completion code.
+5. **Preview** the rater experience using **Preview as Participant**.
+6. **Publish** the study from the experiment detail page when ready.
+7. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
+
+### Fake
+
+Set `PROLIFIC__MODE=fake` to rehearse the Prolific workflow locally without a Prolific token and without spending money. In this mode, the platform creates synthetic study IDs, local fake draft pages, and local publish transitions while keeping the same admin endpoints and round persistence as real mode.
+
+Typical fake-mode rehearsal:
+
+1. **Create an experiment** in the admin UI.
+2. **Upload questions** via CSV.
+3. In **Prolific Study Rounds**, enter the pilot details and click **Run Pilot Study**.
+4. Open the generated **local draft page** to inspect the study metadata that would normally be reviewed in Prolific.
+5. **Publish** locally from the experiment detail page.
+6. Use **Preview as Participant** to generate local ratings and drive the recommendation panel.
+7. Launch follow-on rounds and repeat until the workflow looks correct.
 
 ### Study URL format
 
@@ -467,11 +480,12 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 
 - `POST /api/admin/auth/login` — issue HTTP-only admin cookie for allowlisted email
 - `POST /api/admin/auth/logout` — clear admin cookie
-- `GET /api/admin/platform-status` — check platform capabilities (e.g. Prolific enabled)
+- `GET /api/admin/platform-status` — check platform capabilities and Prolific mode
 - `POST /api/admin/experiments` — create experiment
 - `GET /api/admin/experiments` — list experiments
 - `POST /api/admin/experiments/{id}/upload` — upload question CSV
 - `GET /api/admin/experiments/{id}/uploads` — list uploads for experiment
+- `GET /api/admin/prolific/fake-studies/{study_id}` — inspect local fake study metadata
 - `GET /api/admin/experiments/{id}/stats` — experiment statistics
 - `GET /api/admin/experiments/{id}/analytics` — rating analytics
 - `GET /api/admin/experiments/{id}/export` — export ratings as CSV

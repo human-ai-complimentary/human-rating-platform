@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
+import FakeStudyDetailPage from './components/FakeStudyDetailPage';
 import { api } from './api';
 import {
   isE2eAuthBypassed,
@@ -51,6 +52,21 @@ function App() {
               <SignedIn>
                 <AdminPage>
                   <ExperimentDetailPage />
+                </AdminPage>
+              </SignedIn>
+              <SignedOut>
+                <RequireSignIn message="You must sign in to access this page." />
+              </SignedOut>
+            </>
+          }
+        />
+        <Route
+          path="/admin/prolific/fake-studies/:studyId"
+          element={
+            <>
+              <SignedIn>
+                <AdminPage>
+                  <FakeStudyDetailPage />
                 </AdminPage>
               </SignedIn>
               <SignedOut>
@@ -110,6 +126,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   const [message, setMessage] = React.useState<string>('');
   // Allow overriding the Clerk JWT template via env; default to 'admin'.
   const ADMIN_JWT_TEMPLATE = (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) || 'admin';
+  const userEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
 
   React.useEffect(() => {
     if (!isLoaded) return; // wait for Clerk to load
@@ -120,8 +137,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     }
 
     let cancelled = false;
-    const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
-    if (!email) return;
+    if (!userEmail) return;
 
     (async () => {
       setState('loading');
@@ -159,7 +175,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress, getToken]);
+  }, [ADMIN_JWT_TEMPLATE, getToken, isLoaded, isSignedIn, userEmail]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return <InfoCard title="Preparing admin session…" />;

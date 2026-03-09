@@ -9,6 +9,7 @@ from database import get_session
 from schemas import (
     ExperimentCreate,
     ExperimentResponse,
+    FakeStudyDetailResponse,
     PilotStudyCreate,
     PlatformStatus,
     RecommendationResponse,
@@ -74,7 +75,10 @@ async def admin_logout(manager=Depends(get_admin_manager)):
 @router.get("/platform-status", response_model=PlatformStatus)
 async def get_platform_status():
     settings = get_settings()
-    return PlatformStatus(prolific_enabled=settings.prolific.enabled)
+    return PlatformStatus(
+        prolific_enabled=settings.prolific.enabled,
+        prolific_mode=settings.prolific.mode,
+    )
 
 
 @secure_router.post("/experiments", response_model=ExperimentResponse)
@@ -219,4 +223,15 @@ async def list_study_rounds(
 ):
     return await admin_service.list_study_rounds(
         experiment_id=experiment_id, db=db
+    )
+
+
+@secure_router.get("/prolific/fake-studies/{study_id}", response_model=FakeStudyDetailResponse)
+async def get_fake_study_detail(
+    study_id: str,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.get_fake_study_detail(
+        study_id=study_id,
+        db=db,
     )

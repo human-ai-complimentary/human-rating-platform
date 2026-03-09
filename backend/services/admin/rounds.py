@@ -26,8 +26,13 @@ from schemas import (
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .mappers import PROLIFIC_STUDY_URL_TEMPLATE
-from .prolific import build_completion_url, create_study, generate_completion_code
+from .prolific import (
+    build_completion_url,
+    build_external_study_url,
+    build_study_url,
+    create_study,
+    generate_completion_code,
+)
 from .queries import fetch_experiment_or_404, fetch_ratings_for_experiment
 
 logger = logging.getLogger(__name__)
@@ -37,6 +42,7 @@ ROUND_BUFFER_FACTOR = 0.8
 
 
 def _build_round_response(round_: StudyRound) -> StudyRoundResponse:
+    settings = get_settings()
     return StudyRoundResponse(
         id=round_.id,
         round_number=round_.round_number,
@@ -45,8 +51,10 @@ def _build_round_response(round_: StudyRound) -> StudyRoundResponse:
         prolific_study_status=round_.prolific_study_status,
         places_requested=round_.places_requested,
         created_at=round_.created_at,
-        prolific_study_url=PROLIFIC_STUDY_URL_TEMPLATE.format(
-            study_id=round_.prolific_study_id
+        prolific_study_url=build_study_url(
+            settings=settings.prolific,
+            site_url=settings.app.site_url,
+            study_id=round_.prolific_study_id,
         ),
     )
 
@@ -65,12 +73,9 @@ async def _create_prolific_study_for_experiment(
     completion_url = build_completion_url(completion_code)
 
     app_settings = get_settings()
-    external_study_url = (
-        f"{app_settings.app.site_url}/rate"
-        f"?experiment_id={experiment.id}"
-        f"&PROLIFIC_PID={{{{%PROLIFIC_PID%}}}}"
-        f"&STUDY_ID={{{{%STUDY_ID%}}}}"
-        f"&SESSION_ID={{{{%SESSION_ID%}}}}"
+    external_study_url = build_external_study_url(
+        site_url=app_settings.app.site_url,
+        experiment_id=experiment.id,
     )
 
     result = await create_study(

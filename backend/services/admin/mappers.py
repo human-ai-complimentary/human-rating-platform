@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from config import get_settings
 from models import Experiment, Question, Rating, Rater, Upload
 from schemas import ExperimentResponse
+from .prolific import build_study_url
 
 QUESTION_PREVIEW_LENGTH = 100
-
-
-PROLIFIC_STUDY_URL_TEMPLATE = "https://app.prolific.com/researcher/workspaces/studies/{study_id}"
-
 
 def build_experiment_response(
     experiment: Experiment,
@@ -17,8 +15,13 @@ def build_experiment_response(
     question_count: int,
     rating_count: int,
 ) -> ExperimentResponse:
+    settings = get_settings()
     prolific_study_url = (
-        PROLIFIC_STUDY_URL_TEMPLATE.format(study_id=experiment.prolific_study_id)
+        build_study_url(
+            settings=settings.prolific,
+            site_url=settings.app.site_url,
+            study_id=experiment.prolific_study_id,
+        )
         if experiment.prolific_study_id
         else None
     )

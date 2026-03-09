@@ -94,6 +94,7 @@ export interface ProlificStudyConfig {
 
 export interface PlatformStatus {
   prolific_enabled: boolean;
+  prolific_mode: 'disabled' | 'real' | 'fake';
 }
 
 export interface ExperimentCreate {
@@ -128,4 +129,21 @@ export interface RecommendationResponse {
   total_hours_remaining: number;
   recommended_places: number;
   is_complete: boolean;
+}
+
+export interface FakeStudyDetail {
+  study_id: string;
+  study_status: string;
+  experiment_id: number;
+  experiment_name: string;
+  round_number: number;
+  is_pilot: boolean;
+  places_requested: number;
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  device_compatibility: string[];
+  external_study_url: string;
+  completion_url: string | null;
+  created_at: string;
 }

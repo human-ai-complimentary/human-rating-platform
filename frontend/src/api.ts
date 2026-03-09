@@ -9,6 +9,7 @@ import type {
   Experiment,
   ExperimentCreate,
   ExperimentStats,
+  FakeStudyDetail,
   PilotStudyCreate,
   PlatformStatus,
   Question,
@@ -67,6 +68,7 @@ const routes = {
     authLogin: '/admin/auth/login',
     authLogout: '/admin/auth/logout',
     platformStatus: '/admin/platform-status',
+    fakeStudy: (studyId: string) => `/admin/prolific/fake-studies/${studyId}`,
     prolificPublish: (id: number) => `/admin/experiments/${id}/prolific/publish`,
     prolificPilot: (id: number) => `/admin/experiments/${id}/prolific/pilot`,
     prolificRecommend: (id: number) => `/admin/experiments/${id}/prolific/recommend`,
@@ -311,6 +313,10 @@ export const api = {
 
   async getPlatformStatus(): Promise<PlatformStatus> {
     return requestJson<PlatformStatus>(routes.admin.platformStatus);
+  },
+
+  async getFakeStudyDetail(studyId: string): Promise<FakeStudyDetail> {
+    return requestJson<FakeStudyDetail>(routes.admin.fakeStudy(studyId));
   },
 
   async publishProlificStudy(experimentId: number): Promise<MessageResponse> {

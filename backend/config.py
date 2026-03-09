@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from enum import Enum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -95,13 +96,24 @@ class SeedingSettings(_StrictModel):
     prolific_completion_url: str | None = None
 
 
+class ProlificMode(str, Enum):
+    DISABLED = "disabled"
+    REAL = "real"
+    FAKE = "fake"
+
+
 class ProlificSettings(_StrictModel):
+    mode: ProlificMode = ProlificMode.DISABLED
     api_token: str = ""
     base_url: str = "https://api.prolific.com/api/v1"
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_token)
+        return self.mode != ProlificMode.DISABLED
+
+    @property
+    def uses_api(self) -> bool:
+        return self.mode == ProlificMode.REAL
 
 
 class Settings(BaseSettings):

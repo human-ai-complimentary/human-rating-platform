@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models import Experiment, ProlificStudyStatus, Question, Rating, Rater
+from models import Experiment, ProlificStudyStatus, Question, Rating, Rater, StudyRound
 from schemas import ExperimentCreate, ExperimentResponse
 from .mappers import build_experiment_response
 from .prolific import delete_study, publish_study
@@ -141,6 +141,13 @@ async def publish_prolific_study(
         )
 
     experiment.prolific_study_status = ProlificStudyStatus(result.get("status", "ACTIVE"))
+    current_round = (
+        await db.execute(
+            select(StudyRound).where(StudyRound.prolific_study_id == experiment.prolific_study_id)
+        )
+    ).scalar_one_or_none()
+    if current_round:
+        current_round.prolific_study_status = experiment.prolific_study_status
     await db.commit()
 
     logger.info(

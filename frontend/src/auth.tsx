@@ -112,6 +112,7 @@ export function useUser(): FakeAuthState | ReturnType<typeof useClerkUser> {
       user: fakeUser,
     };
   }
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useClerkUser();
 }
 
@@ -121,5 +122,6 @@ export function useAuth(): FakeUseAuth | ReturnType<typeof useClerkAuth> {
       getToken: async () => 'e2e-bypass-token',
     };
   }
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   return useClerkAuth();
 }
