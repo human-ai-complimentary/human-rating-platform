@@ -31,7 +31,7 @@ def reset_database(request, sync_engine):
     with sync_engine.begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE TABLE ratings, raters, questions, uploads, experiments "
+                "TRUNCATE TABLE study_rounds, ratings, raters, questions, uploads, experiments "
                 "RESTART IDENTITY CASCADE"
             )
         )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -430,12 +431,30 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
 
 def test_migration_runner_current_and_history_commands_succeed():
-    revision_ids = sorted(
-        path.name.split("_")[0]
-        for path in (BACKEND_DIR / "alembic" / "versions").glob("*.py")
-        if path.name != "__init__.py"
-    )
-    assert revision_ids
+    revision_pattern = re.compile(r'^revision:\s*str\s*=\s*"([^"]+)"', re.MULTILINE)
+    down_pattern = re.compile(r'^down_revision:\s*.*=\s*(.+)$', re.MULTILINE)
+    revisions: set[str] = set()
+    down_revisions: set[str] = set()
+
+    for path in (BACKEND_DIR / "alembic" / "versions").glob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        content = path.read_text()
+        revision_match = revision_pattern.search(content)
+        assert revision_match is not None
+        revisions.add(revision_match.group(1))
+
+        down_match = down_pattern.search(content)
+        assert down_match is not None
+        down_raw = down_match.group(1).strip()
+        if down_raw == "None":
+            continue
+        for revision in re.findall(r'"([^"]+)"', down_raw):
+            down_revisions.add(revision)
+
+    assert revisions
+    head_revisions = sorted(revisions - down_revisions)
+    assert head_revisions
 
     current = subprocess.run(
         ["sh", "scripts/migrate.sh", "current"],
@@ -457,8 +476,9 @@ def test_migration_runner_current_and_history_commands_succeed():
 
     current_output = f"{current.stdout}\n{current.stderr}"
     history_output = f"{history.stdout}\n{history.stderr}"
-    assert revision_ids[-1] in current_output
-    for revision_id in revision_ids:
+    for revision_id in head_revisions:
+        assert revision_id in current_output
+    for revision_id in sorted(revisions):
         assert revision_id in history_output
 
 
@@ -500,12 +520,17 @@ def _prolific_experiment_payload() -> dict:
     return {
         "name": _unique_name("prolific-exp"),
         "num_ratings_per_question": 2,
-        "prolific": {
-            "description": "Test study",
-            "estimated_completion_time": 10,
-            "reward": 500,
-            "total_available_places": 5,
-        },
+        "prolific_completion_url": None,
+    }
+
+
+def _pilot_payload() -> dict:
+    return {
+        "description": "Test study",
+        "estimated_completion_time": 10,
+        "reward": 500,
+        "pilot_hours": 5,
+        "device_compatibility": ["desktop"],
     }
 
 
@@ -527,41 +552,63 @@ def _mock_delete_study(*, status: int = 204) -> respx.Route:
     )
 
 
-def _create_prolific_experiment(client: TestClient) -> dict:
+def _create_prolific_experiment(client: TestClient) -> tuple[dict, dict]:
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
     _mock_create_study()
-    resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
-    assert resp.status_code == 200, resp.text
-    return resp.json()
+    pilot_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
+    assert pilot_resp.status_code == 200, pilot_resp.text
+    return experiment, pilot_resp.json()
 
 
 @respx.mock
 def test_prolific_create_stores_study_id(client: TestClient, enable_prolific):
-    data = _create_prolific_experiment(client)
+    experiment, pilot = _create_prolific_experiment(client)
 
-    assert data["prolific_study_id"] == FAKE_STUDY_ID
-    assert data["prolific_study_status"] == "UNPUBLISHED"
-    assert data["prolific_study_url"] is not None
-    assert FAKE_STUDY_ID in data["prolific_study_url"]
-    assert data["prolific_completion_url"] is not None
+    assert pilot["prolific_study_id"] == FAKE_STUDY_ID
+    assert pilot["prolific_study_status"] == "UNPUBLISHED"
+    assert pilot["prolific_study_url"] is not None
+    assert FAKE_STUDY_ID in pilot["prolific_study_url"]
+
+    experiments = client.get("/api/admin/experiments").json()
+    stored = next(item for item in experiments if item["id"] == experiment["id"])
+    assert stored["prolific_study_id"] == FAKE_STUDY_ID
+    assert stored["prolific_study_status"] == "UNPUBLISHED"
+    assert stored["prolific_completion_url"] is not None
 
 
 @respx.mock
 def test_prolific_create_failure_returns_502(client: TestClient, enable_prolific):
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
     _mock_create_study(status=500)
 
-    resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
 
     assert resp.status_code == 502
 
-    # Verify experiment was NOT persisted (rollback)
+    # Experiment remains, but no rounds were created and no study is linked.
     experiments = client.get("/api/admin/experiments").json()
-    assert len(experiments) == 0
+    stored = next(item for item in experiments if item["id"] == experiment["id"])
+    assert stored["prolific_study_id"] is None
+    rounds = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds").json()
+    assert rounds == []
 
 
 @respx.mock
 def test_prolific_publish_updates_status(client: TestClient, enable_prolific):
-    data = _create_prolific_experiment(client)
-    experiment_id = data["id"]
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     route = _mock_publish_study()
 
@@ -574,8 +621,8 @@ def test_prolific_publish_updates_status(client: TestClient, enable_prolific):
 
 @respx.mock
 def test_prolific_delete_calls_prolific_api(client: TestClient, enable_prolific):
-    data = _create_prolific_experiment(client)
-    experiment_id = data["id"]
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     route = _mock_delete_study()
 
@@ -590,8 +637,8 @@ def test_prolific_delete_calls_prolific_api(client: TestClient, enable_prolific)
 
 @respx.mock
 def test_prolific_delete_succeeds_when_api_fails(client: TestClient, enable_prolific):
-    data = _create_prolific_experiment(client)
-    experiment_id = data["id"]
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     _mock_delete_study(status=500)
 
@@ -603,8 +650,8 @@ def test_prolific_delete_succeeds_when_api_fails(client: TestClient, enable_prol
 
 @respx.mock
 def test_prolific_delete_handles_404(client: TestClient, enable_prolific):
-    data = _create_prolific_experiment(client)
-    experiment_id = data["id"]
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     _mock_delete_study(status=404)
 
