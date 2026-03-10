@@ -260,6 +260,8 @@ Top‑level convenience envs (not nested):
 
 - `ADMIN_ALLOWLIST` — comma‑separated or JSON array of admin emails
 - `APP_SECRET_KEY` — HMAC signer for the HTTP‑only admin session cookie
+- `RATER_SESSION_SECRET_KEY` — dedicated HMAC signer for rater session tokens (falls back to `APP_SECRET_KEY` if unset)
+- `RATER_SESSION_TTL_SECONDS` — TTL in seconds for rater session tokens (defaults to 3600; align with session duration)
 - `HRP_SESSION_COOKIE`, `HRP_SESSION_MAX_AGE`, `COOKIE_SECURE` — cookie name/ttl/secure flag
  - `ADMIN_AUTH_ENABLED` — set to `false` to bypass admin auth in dev/tests
 
@@ -445,6 +447,12 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 - `POST /api/raters/submit` — submit a rating
 - `GET /api/raters/session-status` — check session status
 - `POST /api/raters/end-session` — end session
+
+Auth and session flow:
+- Start requires `experiment_id`, `PROLIFIC_PID`, `STUDY_ID`, and `SESSION_ID`. Preview links should include placeholders for `STUDY_ID`/`SESSION_ID`.
+- On `/raters/start`, the backend returns `rater_session_token`. The frontend stores this and sends `X‑Rater‑Session: <token>` for subsequent rater calls.
+- Token shape: `v1.<payload>.<sig>` where payload is base64url JSON `{ rid, eid, iat, exp }` and `sig = HMAC‑SHA256(payload, RATER_SESSION_SECRET_KEY or APP_SECRET_KEY)`.
+- The backend verifies signature and TTL, then binds the token’s `experiment_id` to the server‑side rater record to prevent cross‑experiment spoofing.
 
 ---
 
