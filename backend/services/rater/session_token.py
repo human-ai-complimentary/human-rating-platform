@@ -37,8 +37,9 @@ VERSION = "v1"
 
 def issue_rater_session_token(settings: Settings, *, rater_id: int, experiment_id: int) -> str:
     now = int(time.time())
-    payload = _b64url_json({"rid": rater_id, "eid": experiment_id, "iat": now})
-    sig = _sign(settings.app_secret_key, payload)
+    exp = now + int(settings.rater_session_ttl_seconds)
+    payload = _b64url_json({"rid": rater_id, "eid": experiment_id, "iat": now, "exp": exp})
+    sig = _sign(settings.effective_rater_session_secret, payload)
     return f"{VERSION}.{payload}.{sig}"
 
 
@@ -49,17 +50,24 @@ def verify_rater_session_token(settings: Settings, token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid rater session")
     if ver != VERSION:
         raise HTTPException(status_code=401, detail="Invalid rater session")
-    expected = _sign(settings.app_secret_key, payload)
+    expected = _sign(settings.effective_rater_session_secret, payload)
     if not hmac.compare_digest(expected, sig):
         raise HTTPException(status_code=401, detail="Invalid rater session")
     data = _unb64url_json(payload)
     rid = data.get("rid")
     eid = data.get("eid")
     iat = data.get("iat")
+    exp = data.get("exp")
     try:
         rid = int(rid)
         eid = int(eid)
         iat = int(iat)
+        exp = int(exp)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid rater session")
-    return {"rater_id": rid, "experiment_id": eid, "issued_at": iat}
+    # Enforce TTL: expired tokens are treated as expired sessions
+    now = int(time.time())
+    if exp <= now:
+        # Keep this aligned with frontend handling for expired sessions
+        raise HTTPException(status_code=403, detail="Session expired")
+    return {"rater_id": rid, "experiment_id": eid, "issued_at": iat, "expires_at": exp}
