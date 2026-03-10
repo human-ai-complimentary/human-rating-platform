@@ -6,6 +6,52 @@ from pydantic import BaseModel, ConfigDict, Field
 from models import ProlificStudyStatus
 
 
+# Delegation schemas
+
+class SubtaskData(BaseModel):
+    id: int
+    description: str
+    ai_answer: str
+    ai_reasoning: str
+    ai_confidence: float
+    needs_human_input: bool = False
+
+
+class DelegationTaskResponse(BaseModel):
+    id: str
+    instructions: str
+    question: str
+    delegation_data: list[SubtaskData]
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    pid: str
+    task_id: str
+    experiment_id: int
+    message_history: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    ai_message: str
+
+
+class DelegationSubmit(BaseModel):
+    pid: str
+    task_id: str
+    experiment_id: int
+    subtask_inputs: dict[str, str]
+
+
+class DelegationSubmitResponse(BaseModel):
+    status: str
+    message: str = "Your answers have been successfully submitted."
+
+
 # Prolific schemas
 class ProlificStudyConfig(BaseModel):
     description: str
@@ -25,6 +71,7 @@ class PlatformStatus(BaseModel):
 class ExperimentCreate(BaseModel):
     name: str
     num_ratings_per_question: int = 3
+    experiment_type: str = "rating"
     prolific_completion_url: Optional[str] = None
     prolific: Optional[ProlificStudyConfig] = None
 
@@ -34,6 +81,7 @@ class ExperimentResponse(BaseModel):
     name: str
     created_at: datetime
     num_ratings_per_question: int
+    experiment_type: str = "rating"
     prolific_completion_url: Optional[str] = None
     prolific_study_id: Optional[str] = None
     prolific_study_status: Optional[ProlificStudyStatus] = None
@@ -62,6 +110,8 @@ class RaterStartResponse(BaseModel):
     session_end_time: datetime
     experiment_name: str
     completion_url: Optional[str] = None
+    experiment_type: str = "rating"
+    delegation_task_id: Optional[str] = None
 
 
 class SessionStatusResponse(BaseModel):

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Timer from './Timer';
 import QuestionCard from './QuestionCard';
+import DelegationView from './DelegationView';
 import type { Session, Question } from '../types';
 
 function RaterView() {
@@ -58,7 +59,11 @@ function RaterView() {
     api.startSession(experimentId, prolificId, studyId, sessionId, isPreview)
       .then(data => {
         setSession(data);
-        return loadNextQuestion(data.rater_id);
+        if (data.experiment_type === 'rating') {
+          return loadNextQuestion(data.rater_id);
+        }
+        // For chat/delegation, the DelegationView handles task fetching
+        setLoading(false);
       })
       .catch(err => {
         setError(err.message);
@@ -251,6 +256,17 @@ function RaterView() {
           Loading...
         </div>
       </div>
+    );
+  }
+
+  if (session.experiment_type !== 'rating') {
+    return (
+      <DelegationView
+        session={session}
+        experimentId={experimentId!}
+        prolificId={prolificId!}
+        onComplete={() => setAllDone(true)}
+      />
     );
   }
 

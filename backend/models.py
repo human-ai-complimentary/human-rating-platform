@@ -39,6 +39,14 @@ class ProlificStudyStatus(str, Enum):
     COMPLETED = "COMPLETED"
 
 
+class ExperimentType(str, Enum):
+    """Experiment interaction mode."""
+
+    RATING = "rating"
+    CHAT = "chat"
+    DELEGATION = "delegation"
+
+
 class Experiment(SQLModel, table=True):
     __tablename__ = "experiments"
 
@@ -51,6 +59,10 @@ class Experiment(SQLModel, table=True):
             nullable=False,
             server_default=text("CURRENT_TIMESTAMP"),
         ),
+    )
+    experiment_type: str = Field(
+        default="rating",
+        sa_column=Column(String(16), nullable=False, server_default=text("'rating'")),
     )
     num_ratings_per_question: int = Field(
         default=3,
@@ -143,6 +155,10 @@ class Rater(SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )
+    delegation_task_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(64), nullable=True),
+    )
 
 
 class Rating(SQLModel, table=True):
@@ -181,6 +197,34 @@ class Rating(SQLModel, table=True):
             server_default=text("CURRENT_TIMESTAMP"),
         ),
     )
+
+
+class InteractionLog(SQLModel, table=True):
+    """Logs chat messages and delegation submissions for non-rating experiments."""
+
+    __tablename__ = "interaction_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+    )
+    prolific_pid: str = Field(sa_column=Column(String(64), nullable=False))
+    experiment_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiments.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    task_id: str = Field(sa_column=Column(String(64), nullable=False))
+    condition: str = Field(sa_column=Column(String(16), nullable=False))  # "chat" | "delegation"
+    interaction_type: str = Field(sa_column=Column(String(32), nullable=False))
+    payload: str = Field(sa_column=Column(Text, nullable=False))  # JSON string
 
 
 class Upload(SQLModel, table=True):

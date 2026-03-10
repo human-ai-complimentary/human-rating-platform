@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Rating, Rater
+from questions import get_random_task_id
 from schemas import (
     QuestionResponse,
     RaterStartResponse,
@@ -72,8 +73,11 @@ async def start_session(
             session_start=existing_rater.session_start,
             experiment_name=experiment.name,
             completion_url=experiment.prolific_completion_url,
+            experiment_type=experiment.experiment_type,
+            delegation_task_id=existing_rater.delegation_task_id,
         )
 
+    is_delegation = experiment.experiment_type in ("chat", "delegation")
     rater = Rater(
         prolific_id=prolific_pid,
         study_id=study_id,
@@ -82,6 +86,7 @@ async def start_session(
         session_start=datetime.now(UTC),
         is_active=True,
         is_preview=is_preview,
+        delegation_task_id=get_random_task_id() if is_delegation else None,
     )
     db.add(rater)
     await db.commit()
@@ -99,6 +104,8 @@ async def start_session(
         session_start=rater.session_start,
         experiment_name=experiment.name,
         completion_url=experiment.prolific_completion_url,
+        experiment_type=experiment.experiment_type,
+        delegation_task_id=rater.delegation_task_id,
     )
 
 
