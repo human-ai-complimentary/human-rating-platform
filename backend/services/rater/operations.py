@@ -70,7 +70,9 @@ async def start_session(
 
     if existing_rater:
         validate_existing_rater_can_resume(existing_rater)
-        token = issue_rater_session_token(settings=settings, rater_id=existing_rater.id, experiment_id=experiment_id)
+        token = issue_rater_session_token(
+            settings=settings, rater_id=existing_rater.id, experiment_id=experiment_id
+        )
         return build_rater_start_response(
             rater_id=existing_rater.id,
             session_start=existing_rater.session_start,
@@ -99,7 +101,9 @@ async def start_session(
         experiment_id,
     )
 
-    token = issue_rater_session_token(settings=settings, rater_id=rater.id, experiment_id=experiment_id)
+    token = issue_rater_session_token(
+        settings=settings, rater_id=rater.id, experiment_id=experiment_id
+    )
 
     return build_rater_start_response(
         rater_id=rater.id,

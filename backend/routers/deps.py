@@ -42,4 +42,3 @@ async def require_rater_session(
         issued_at=data["issued_at"],
         expires_at=data["expires_at"],
     )
-
