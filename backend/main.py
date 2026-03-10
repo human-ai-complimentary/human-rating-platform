@@ -13,7 +13,9 @@ from starlette.responses import Response
 
 from config import get_settings
 from database import build_database
+from questions import load_questions
 from routers import admin, raters
+from routers import delegation
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +62,7 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        load_questions()
         await database.connect()
         app.state.database = database
         try:
@@ -87,6 +90,7 @@ def create_app() -> FastAPI:
     api_router.include_router(admin.router)
     api_router.include_router(admin.secure_router)
     api_router.include_router(raters.router)
+    api_router.include_router(delegation.router)
     api_router.add_api_route("/health", health, methods=["GET"])
     app.include_router(api_router)
 

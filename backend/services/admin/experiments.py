@@ -37,6 +37,7 @@ async def create_experiment(
         db_experiment = Experiment(
             name=payload.name,
             num_ratings_per_question=payload.num_ratings_per_question,
+            experiment_type=payload.experiment_type,
             prolific_completion_url=completion_url,
             prolific_completion_code=completion_code,
         )
@@ -90,6 +91,7 @@ async def create_experiment(
     db_experiment = Experiment(
         name=payload.name,
         num_ratings_per_question=payload.num_ratings_per_question,
+        experiment_type=payload.experiment_type,
         prolific_completion_url=payload.prolific_completion_url,
     )
     db.add(db_experiment)

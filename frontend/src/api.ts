@@ -6,6 +6,8 @@
 
 import type {
   Analytics,
+  ChatMessage,
+  DelegationTask,
   Experiment,
   ExperimentCreate,
   ExperimentStats,
@@ -72,6 +74,11 @@ const routes = {
     submit: '/raters/submit',
     sessionStatus: '/raters/session-status',
     endSession: '/raters/end-session',
+  },
+  delegation: {
+    task: (taskId: string) => `/delegation/task/${taskId}`,
+    chat: '/delegation/chat',
+    submit: '/delegation/submit',
   },
 } as const;
 
@@ -382,6 +389,36 @@ export const api = {
     return requestJson<MessageResponse>(routes.rater.endSession, {
       method: 'POST',
       query: { rater_id: raterId },
+    });
+  },
+
+  // ── Delegation ───────────────────────────────────────────────────────────
+
+  async getDelegationTask(taskId: string): Promise<DelegationTask> {
+    return requestJson<DelegationTask>(routes.delegation.task(taskId));
+  },
+
+  async sendChatMessage(
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    messageHistory: ChatMessage[]
+  ): Promise<{ ai_message: string }> {
+    return requestJson<{ ai_message: string }>(routes.delegation.chat, {
+      method: 'POST',
+      json: { pid, task_id: taskId, experiment_id: experimentId, message_history: messageHistory },
+    });
+  },
+
+  async submitDelegation(
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    subtaskInputs: Record<string, string>
+  ): Promise<{ status: string; message: string }> {
+    return requestJson<{ status: string; message: string }>(routes.delegation.submit, {
+      method: 'POST',
+      json: { pid, task_id: taskId, experiment_id: experimentId, subtask_inputs: subtaskInputs },
     });
   },
 };
