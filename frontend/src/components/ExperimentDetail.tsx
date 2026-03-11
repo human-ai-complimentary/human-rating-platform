@@ -26,7 +26,8 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [includePreview, setIncludePreview] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
-  const [prolificMode, setProlificMode] = useState<'disabled' | 'real' | 'fake'>('disabled');
+  const [prolificMode, setProlificMode] = useState<'loading' | 'disabled' | 'real' | 'fake'>('loading');
+  const [platformStatusMessage, setPlatformStatusMessage] = useState<string | null>(null);
   const [rounds, setRounds] = useState<StudyRound[]>([]);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [pilotForm, setPilotForm] = useState<PilotStudyCreate>({
@@ -98,12 +99,18 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     loadStats();
     loadUploads();
     api.getPlatformStatus()
-      .then((s) => setProlificMode(s.prolific_mode))
-      .catch(() => setProlificMode('disabled'));
+      .then((s) => {
+        setProlificMode(s.prolific_mode);
+        setPlatformStatusMessage(null);
+      })
+      .catch(() => {
+        setProlificMode('disabled');
+        setPlatformStatusMessage('Unable to load platform status. Assuming Prolific is disabled.');
+      });
   }, [loadStats, loadUploads]);
 
   useEffect(() => {
-    if (prolificMode !== 'disabled') {
+    if (prolificMode === 'fake' || prolificMode === 'real') {
       loadRounds();
       loadRecommendation();
     }
@@ -259,6 +266,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       padding: '16px 20px',
       borderBottom: '1px solid #e0e0e0',
       background: '#fafafa',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
     },
     sectionTitle: {
       margin: 0,
@@ -268,8 +279,24 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       letterSpacing: '0.5px',
       color: '#555',
     },
+    statusBadge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      borderRadius: '999px',
+      padding: '4px 10px',
+      fontSize: '12px',
+      fontWeight: 600,
+      letterSpacing: '0.2px',
+    },
     sectionBody: {
       padding: '20px',
+    },
+    infoBanner: {
+      borderRadius: '8px',
+      padding: '12px 14px',
+      marginBottom: '16px',
+      fontSize: '13px',
+      lineHeight: 1.5,
     },
     statsGrid: {
       display: 'grid',
@@ -436,6 +463,34 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     },
   };
 
+  const prolificModeMeta = prolificMode === 'fake'
+    ? {
+        badgeLabel: 'Fake Mode',
+        badgeStyle: { background: '#e7f1ff', color: '#0b5394' },
+        bannerStyle: { ...styles.infoBanner, background: '#f0f7ff', border: '1px solid #4a90d9', color: '#0b5394' },
+        message: 'Fake Prolific mode is enabled. Study drafts and publish actions stay local so you can rehearse the workflow without spending money.',
+      }
+    : prolificMode === 'real'
+      ? {
+          badgeLabel: 'Real Mode',
+          badgeStyle: { background: '#e8f6ed', color: '#166534' },
+          bannerStyle: { ...styles.infoBanner, background: '#eefbf3', border: '1px solid #72c08f', color: '#166534' },
+          message: 'Real Prolific mode is enabled. Pilot studies and rounds will create live Prolific drafts.',
+        }
+      : prolificMode === 'loading'
+        ? {
+            badgeLabel: 'Checking...',
+            badgeStyle: { background: '#f1f3f5', color: '#495057' },
+            bannerStyle: { ...styles.infoBanner, background: '#f8f9fa', border: '1px solid #d0d7de', color: '#495057' },
+            message: 'Checking Prolific mode for this environment...',
+          }
+        : {
+            badgeLabel: 'Disabled',
+            badgeStyle: { background: '#f8f0f0', color: '#9f1239' },
+            bannerStyle: { ...styles.infoBanner, background: '#fff5f5', border: '1px solid #f1b8be', color: '#9f1239' },
+            message: 'Prolific is disabled for this environment. To rehearse locally, set `PROLIFIC__MODE=fake` in `backend/.env` and restart the backend.',
+          };
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -522,44 +577,48 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
           </div>
 
           {/* Prolific Study Rounds */}
-          {prolificMode !== 'disabled' && (
-            <div style={styles.section}>
-              <div style={styles.sectionHeader}>
-                <h2 style={styles.sectionTitle}>Prolific Study Rounds</h2>
-              </div>
-              <div style={styles.sectionBody}>
-                {prolificMode === 'fake' && (
-                  <div
-                    data-testid="fake-prolific-notice"
-                    style={{
-                      ...styles.warning,
-                      background: '#f0f7ff',
-                      border: '1px solid #4a90d9',
-                      color: '#0b5394',
-                    }}
-                  >
-                    Fake Prolific mode is enabled. Study drafts and publish actions stay local so
-                    you can rehearse the workflow without spending money.
+          <div style={styles.section}>
+            <div style={styles.sectionHeader}>
+              <h2 style={styles.sectionTitle}>Prolific Study Rounds</h2>
+              <span
+                data-testid="prolific-mode-badge"
+                style={{ ...styles.statusBadge, ...prolificModeMeta.badgeStyle }}
+              >
+                {prolificModeMeta.badgeLabel}
+              </span>
+            </div>
+            <div style={styles.sectionBody}>
+              <div
+                data-testid="prolific-mode-notice"
+                style={prolificModeMeta.bannerStyle}
+              >
+                {prolificModeMeta.message}
+                {platformStatusMessage && (
+                  <div style={{ marginTop: '8px' }}>
+                    {platformStatusMessage}
                   </div>
                 )}
+              </div>
 
-                {/* Preview link always available */}
-                <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
-                  <button
-                    data-testid="preview-participant-button"
-                    onClick={() => {
-                      const previewId = `preview_${Date.now()}`;
-                      const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
-                      window.open(url, '_blank');
-                    }}
-                    style={styles.secondaryButton}
-                  >
-                    Preview as Participant
-                  </button>
-                </div>
+              {/* Preview link always available */}
+              <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
+                <button
+                  data-testid="preview-participant-button"
+                  onClick={() => {
+                    const previewId = `preview_${Date.now()}`;
+                    const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
+                    window.open(url, '_blank');
+                  }}
+                  style={styles.secondaryButton}
+                >
+                  Preview as Participant
+                </button>
+              </div>
 
-                {/* Existing rounds list */}
-                {rounds.length > 0 && (
+              {(prolificMode === 'fake' || prolificMode === 'real') && (
+                <>
+                  {/* Existing rounds list */}
+                  {rounds.length > 0 && (
                   <div data-testid="study-rounds-list" style={{ marginBottom: '20px' }}>
                     {rounds.map((round) => (
                       <div key={round.id} style={{
@@ -615,10 +674,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       </div>
                     ))}
                   </div>
-                )}
+                  )}
 
-                {/* Recommendation panel (when pilot has data) */}
-                {recommendation && recommendation.avg_time_per_question_seconds > 0 && (
+                  {/* Recommendation panel (when pilot has data) */}
+                  {recommendation && recommendation.avg_time_per_question_seconds > 0 && (
                   <div data-testid="recommendation-panel" style={{
                     padding: '12px',
                     background: recommendation.is_complete ? '#d4edda' : '#f0f7ff',
@@ -648,10 +707,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       </>
                     )}
                   </div>
-                )}
+                  )}
 
-                {/* Pilot form — shown when no pilot exists yet */}
-                {rounds.length === 0 && (
+                  {/* Pilot form — shown when no pilot exists yet */}
+                  {rounds.length === 0 && (
                   <form onSubmit={handleRunPilot}>
                     <div style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>
                       Run a small pilot study to measure how long raters take per question. This data drives automatic sizing of subsequent rounds.
@@ -713,9 +772,9 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       Run Pilot Study
                     </button>
                   </form>
-                )}
+                  )}
 
-                {experiment.prolific_completion_url && (
+                  {experiment.prolific_completion_url && (
                   <div style={{ ...styles.inputGroup, marginTop: rounds.length === 0 ? '16px' : '0' }}>
                     <label style={styles.label}>Completion URL</label>
                     <input
@@ -727,10 +786,11 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     />
                     <div style={styles.hint}>Raters redirect here when finished.</div>
                   </div>
-                )}
-              </div>
+                  )}
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Danger Zone */}
           <div style={{ ...styles.section, ...styles.dangerSection }}>

@@ -112,7 +112,13 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
   });
 }
 
-async function installApiMocks(page: Page, state: MockState) {
+async function installApiMocks(
+  page: Page,
+  state: MockState,
+  options: { prolificMode?: 'disabled' | 'real' | 'fake' } = {}
+) {
+  const prolificMode = options.prolificMode ?? 'fake';
+
   await page.context().route('**/api/**', async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -130,7 +136,10 @@ async function installApiMocks(page: Page, state: MockState) {
     }
 
     if (pathname === '/api/admin/platform-status') {
-      await fulfillJson(route, 200, { prolific_enabled: true, prolific_mode: 'fake' });
+      await fulfillJson(route, 200, {
+        prolific_enabled: prolificMode !== 'disabled',
+        prolific_mode: prolificMode,
+      });
       return;
     }
 
@@ -394,8 +403,9 @@ test('create experiment, upload CSV, run pilot, and launch a round', async ({ pa
 
   await expect(page.getByRole('heading', { name: 'Hour Breakdown Smoke Test' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Prolific Study Rounds' })).toBeVisible();
+  await expect(page.getByTestId('prolific-mode-badge')).toHaveText('Fake Mode');
+  await expect(page.getByTestId('prolific-mode-notice')).toContainText('Fake Prolific mode is enabled');
   await expect(page.getByTestId('run-pilot-button')).toBeVisible();
-  await expect(page.getByTestId('fake-prolific-notice')).toBeVisible();
 
   const csvPath = fileURLToPath(new URL('../../sample_questions.csv', import.meta.url));
   await page.getByTestId('upload-csv-input').setInputFiles(csvPath);
@@ -485,4 +495,34 @@ test('preview participant link opens /rate with preview mode and starts one prev
   await expect(popup.getByText('Is this workflow ready for release?')).toBeVisible();
   await expect.poll(() => state.previewStartRequests.length).toBe(1);
   await expect(state.previewStartRequests[0]).toContain('preview=true');
+});
+
+test('disabled mode explains why pilot controls are unavailable', async ({ page }) => {
+  const state = createMockState();
+  state.experiments = [
+    buildExperiment(state, {
+      id: 1,
+      name: 'Disabled Prolific Experiment',
+      question_count: 2,
+    }),
+  ];
+  state.nextExperimentId = 2;
+  state.uploads[1] = [];
+  state.rounds[1] = [];
+  state.recommendations[1] = {
+    avg_time_per_question_seconds: 0,
+    remaining_rating_actions: 0,
+    total_hours_remaining: 0,
+    recommended_places: 0,
+    is_complete: false,
+  };
+
+  await installApiMocks(page, state, { prolificMode: 'disabled' });
+  await page.goto('/admin/experiments/1');
+
+  await expect(page.getByTestId('prolific-mode-badge')).toHaveText('Disabled');
+  await expect(page.getByTestId('prolific-mode-notice')).toContainText('Prolific is disabled for this environment');
+  await expect(page.getByTestId('prolific-mode-notice')).toContainText('PROLIFIC__MODE=fake');
+  await expect(page.getByTestId('preview-participant-button')).toBeVisible();
+  await expect(page.getByTestId('run-pilot-button')).toHaveCount(0);
 });
