@@ -388,7 +388,7 @@ def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync
         chunks = list(response.iter_text())
 
     assert len(chunks) >= 1
- 
+
     parsed_rows = list(csv.reader(io.StringIO("".join(chunks))))
     assert parsed_rows[0][0] == "rating_id"
     assert len(parsed_rows) == row_count + 1

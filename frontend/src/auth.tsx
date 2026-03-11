@@ -52,7 +52,34 @@ export function AppAuthProvider({ children }: AuthProviderProps) {
 
   const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
   if (!publishableKey) {
-    throw new Error('Missing Clerk Publishable Key (VITE_CLERK_PUBLISHABLE_KEY)');
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          backgroundColor: '#f5f5f5',
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 640,
+            background: '#fff',
+            borderRadius: 8,
+            padding: 24,
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+          }}
+        >
+          <h1 style={{ marginTop: 0, marginBottom: 12 }}>Missing Clerk configuration</h1>
+          <p style={{ margin: 0, color: '#444' }}>
+            Set <code>VITE_CLERK_PUBLISHABLE_KEY</code> in <code>frontend/.env.local</code> and
+            restart the Vite dev server.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -72,7 +72,7 @@ help: ## Show available commands
 	' $(MAKEFILE_LIST)
 
 ##@ Setup
-env.sync: ## Create backend/.env and frontend/.env when missing
+env.sync: ## Create backend/.env, frontend/.env, and frontend/.env.local when missing
 	@if [ ! -f backend/.env ]; then \
 		cp backend/.env.example backend/.env; \
 		printf "$(C_OK)++$(C_RESET) Created backend/.env from backend/.env.example\n"; \
@@ -80,6 +80,10 @@ env.sync: ## Create backend/.env and frontend/.env when missing
 	@if [ ! -f frontend/.env ]; then \
 		cp frontend/.env.example frontend/.env; \
 		printf "$(C_OK)++$(C_RESET) Created frontend/.env from frontend/.env.example\n"; \
+	fi
+	@if [ ! -f frontend/.env.local ]; then \
+		cp frontend/.env.local.example frontend/.env.local; \
+		printf "$(C_OK)++$(C_RESET) Created frontend/.env.local from frontend/.env.local.example\n"; \
 	fi
 
 ##@ Core

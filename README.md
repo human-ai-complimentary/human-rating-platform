@@ -65,10 +65,13 @@ This project uses Clerk for frontend identity and a backend HTTP‑only cookie f
   - Name: `admin`
   - Claims JSON:
     ```json
-    { "email": "{{user.primary_email_address}}" }
+    {
+      "aud": "human-rating-platform-admin-api",
+      "email": "{{user.primary_email_address}}"
+    }
     ```
-  - Audience: set to match `CLERK__AUDIENCE`.
-  - Issuer/JWKS: the values above are auto-derived by Clerk; copy them into backend env.
+  - `aud` must match `CLERK__AUDIENCE`.
+  - `iss` is added by Clerk automatically. Copy the Issuer and JWKS endpoint shown in the template UI into backend env.
 - Frontend usage:
   - Retrieve token with `useAuth().getToken({ template: 'admin' })` and send `Authorization: Bearer <token>` to `/api/admin/auth/login`.
 
@@ -76,6 +79,8 @@ This project uses Clerk for frontend identity and a backend HTTP‑only cookie f
 
 - Controlled by env var `ADMIN_ALLOWLIST` (comma‑separated or JSON array of emails).
 - If your email isn’t in the allowlist, admin login returns 403 and the UI shows a friendly explanation.
+
+```bash
 # Admin allowlist + session cookie
 ADMIN_ALLOWLIST=alice@example.com,bob@example.com
 APP_SECRET_KEY=please-change-me-to-a-long-random-string
@@ -122,7 +127,7 @@ Clerk Dashboard: add your Render web domain under Settings → Domains so Clerk 
 make env.sync
 ```
 
-Creates `backend/.env` and `frontend/.env` from templates. Then set:
+Creates `backend/.env`, `frontend/.env`, and `frontend/.env.local` from templates. Then set:
 
 - `frontend/.env.local`
   
