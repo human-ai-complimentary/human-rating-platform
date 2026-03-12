@@ -106,20 +106,9 @@ class ProlificSettings(_StrictModel):
     api_token: str = ""
     base_url: str = "https://api.prolific.com/api/v1"
 
-    @field_validator("mode", mode="before")
-    @classmethod
-    def coerce_legacy_fake_mode(cls, value: object) -> object:
-        if value == "fake":
-            return ProlificMode.DISABLED
-        return value
-
     @property
     def enabled(self) -> bool:
         return self.mode != ProlificMode.DISABLED
-
-    @property
-    def uses_api(self) -> bool:
-        return self.mode == ProlificMode.REAL
 
 
 class Settings(BaseSettings):

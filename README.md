@@ -258,7 +258,7 @@ Env keys use Pydantic's nested `__` delimiter for nested settings models:
 - `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
 - `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
 - `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
-- `PROLIFIC__MODE` — `disabled`, `real`, or `fake`
+- `PROLIFIC__MODE` — `disabled` or `real`
 - `PROLIFIC__API_TOKEN` — Prolific API token (optional; enables automated study management)
 - `APP__SITE_URL` — public frontend URL used to build Prolific study links (default: `http://localhost:5173`)
 
@@ -373,7 +373,7 @@ Set in repo → **Settings** → **Secrets and variables** → **Actions**:
 - `DATABASE__URL` — Render Postgres internal connection string
 - `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
 - `APP__SITE_URL` — public frontend URL, e.g. `https://human-rating-platform-web.onrender.com`
-- `PROLIFIC__MODE` — `disabled`, `real`, or `fake`
+- `PROLIFIC__MODE` — `disabled` or `real`
 - `PROLIFIC__API_TOKEN` — Prolific API token (required only when `PROLIFIC__MODE=real`)
 
 **Web service** (set in Render Dashboard → Web service → Environment):
@@ -433,11 +433,11 @@ q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 
 ## Prolific Integration
 
-The Prolific integration has three explicit modes controlled by `PROLIFIC__MODE`.
+The Prolific integration has two explicit modes controlled by `PROLIFIC__MODE`.
 
 ### Disabled
 
-Set `PROLIFIC__MODE=disabled` to hide the Prolific study-round workflow entirely. This is useful when you want to use the platform without any Prolific-specific automation.
+Set `PROLIFIC__MODE=disabled` to hide the Prolific round workflow entirely. This is useful when you want to use the platform without any Prolific-specific automation.
 
 ### Real
 
@@ -452,20 +452,6 @@ Typical workflow:
 5. **Preview** the rater experience using **Preview as Participant**.
 6. **Publish** the study from the experiment detail page when ready.
 7. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
-
-### Fake
-
-Set `PROLIFIC__MODE=fake` to rehearse the Prolific workflow locally without a Prolific token and without spending money. In this mode, the platform creates synthetic study IDs, local fake draft pages, and local publish transitions while keeping the same admin endpoints and round persistence as real mode.
-
-Typical fake-mode rehearsal:
-
-1. **Create an experiment** in the admin UI.
-2. **Upload questions** via CSV.
-3. In **Prolific Study Rounds**, enter the pilot details and click **Run Pilot Study**.
-4. Open the generated **local draft page** to inspect the study metadata that would normally be reviewed in Prolific.
-5. **Publish** locally from the experiment detail page.
-6. Use **Preview as Participant** to generate local ratings and drive the recommendation panel.
-7. Launch follow-on rounds and repeat until the workflow looks correct.
 
 ### Study URL format
 
@@ -490,11 +476,15 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 - `GET /api/admin/experiments` — list experiments
 - `POST /api/admin/experiments/{id}/upload` — upload question CSV
 - `GET /api/admin/experiments/{id}/uploads` — list uploads for experiment
-- `GET /api/admin/prolific/fake-studies/{study_id}` — inspect local fake study metadata
 - `GET /api/admin/experiments/{id}/stats` — experiment statistics
 - `GET /api/admin/experiments/{id}/analytics` — rating analytics
 - `GET /api/admin/experiments/{id}/export` — export ratings as CSV
-- `POST /api/admin/experiments/{id}/prolific/publish` — publish linked Prolific study
+- `POST /api/admin/experiments/{id}/prolific/pilot` — create the pilot round draft
+- `GET /api/admin/experiments/{id}/prolific/recommend` — calculate the next-round recommendation
+- `GET /api/admin/experiments/{id}/prolific/rounds` — list Prolific rounds for the experiment
+- `POST /api/admin/experiments/{id}/prolific/rounds` — create a follow-on round draft
+- `POST /api/admin/experiments/{id}/prolific/rounds/{round_id}/publish` — publish an unpublished round
+- `POST /api/admin/experiments/{id}/prolific/rounds/{round_id}/close` — close an active round
 - `DELETE /api/admin/experiments/{id}` — delete experiment (+ Prolific study if linked)
 
 ### Rater

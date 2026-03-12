@@ -53,7 +53,22 @@ def _build_client(settings: ProlificSettings) -> httpx.AsyncClient:
     )
 
 
-async def _create_real_study(
+async def _transition_real_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+    action: str,
+) -> dict:
+    async with _build_client(settings) as client:
+        response = await client.post(
+            f"/studies/{study_id}/transition/",
+            json={"action": action},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
+async def create_study(
     *,
     settings: ProlificSettings,
     name: str,
@@ -64,7 +79,10 @@ async def _create_real_study(
     total_available_places: int,
     completion_code: str,
     device_compatibility: list[str] | None = None,
-) -> dict:
+) -> dict[str, str]:
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("create_study called while Prolific mode is disabled")
+
     payload: dict = {
         "name": name,
         "description": description,
@@ -89,97 +107,6 @@ async def _create_real_study(
         return response.json()
 
 
-async def _publish_real_study(
-    *,
-    settings: ProlificSettings,
-    study_id: str,
-) -> dict:
-    return await _transition_real_study(
-        settings=settings,
-        study_id=study_id,
-        action="PUBLISH",
-    )
-
-
-async def _stop_real_study(
-    *,
-    settings: ProlificSettings,
-    study_id: str,
-) -> dict:
-    return await _transition_real_study(
-        settings=settings,
-        study_id=study_id,
-        action="STOP",
-    )
-
-
-async def _transition_real_study(
-    *,
-    settings: ProlificSettings,
-    study_id: str,
-    action: str,
-) -> dict:
-    async with _build_client(settings) as client:
-        response = await client.post(
-            f"/studies/{study_id}/transition/",
-            json={"action": action},
-        )
-        response.raise_for_status()
-        return response.json()
-
-
-async def _delete_real_study(
-    *,
-    settings: ProlificSettings,
-    study_id: str,
-) -> None:
-    async with _build_client(settings) as client:
-        response = await client.delete(f"/studies/{study_id}/")
-        if response.status_code == 404:
-            logger.warning("Prolific study %s already deleted (404)", study_id)
-            return
-        response.raise_for_status()
-
-
-async def _get_real_study(
-    *,
-    settings: ProlificSettings,
-    study_id: str,
-) -> dict:
-    async with _build_client(settings) as client:
-        response = await client.get(f"/studies/{study_id}/")
-        response.raise_for_status()
-        return response.json()
-
-
-async def create_study(
-    *,
-    settings: ProlificSettings,
-    name: str,
-    description: str,
-    external_study_url: str,
-    estimated_completion_time: int,
-    reward: int,
-    total_available_places: int,
-    completion_code: str,
-    device_compatibility: list[str] | None = None,
-) -> dict[str, str]:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("create_study called while Prolific mode is disabled")
-
-    return await _create_real_study(
-        settings=settings,
-        name=name,
-        description=description,
-        external_study_url=external_study_url,
-        estimated_completion_time=estimated_completion_time,
-        reward=reward,
-        total_available_places=total_available_places,
-        completion_code=completion_code,
-        device_compatibility=device_compatibility,
-    )
-
-
 async def publish_study(
     *,
     settings: ProlificSettings,
@@ -188,9 +115,10 @@ async def publish_study(
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("publish_study called while Prolific mode is disabled")
 
-    return await _publish_real_study(
+    return await _transition_real_study(
         settings=settings,
         study_id=study_id,
+        action="PUBLISH",
     )
 
 
@@ -202,9 +130,10 @@ async def stop_study(
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("stop_study called while Prolific mode is disabled")
 
-    return await _stop_real_study(
+    return await _transition_real_study(
         settings=settings,
         study_id=study_id,
+        action="STOP",
     )
 
 
@@ -216,10 +145,12 @@ async def delete_study(
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("delete_study called while Prolific mode is disabled")
 
-    await _delete_real_study(
-        settings=settings,
-        study_id=study_id,
-    )
+    async with _build_client(settings) as client:
+        response = await client.delete(f"/studies/{study_id}/")
+        if response.status_code == 404:
+            logger.warning("Prolific study %s already deleted (404)", study_id)
+            return
+        response.raise_for_status()
 
 
 async def get_study(
@@ -230,7 +161,7 @@ async def get_study(
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("get_study called while Prolific mode is disabled")
 
-    return await _get_real_study(
-        settings=settings,
-        study_id=study_id,
-    )
+    async with _build_client(settings) as client:
+        response = await client.get(f"/studies/{study_id}/")
+        response.raise_for_status()
+        return response.json()
