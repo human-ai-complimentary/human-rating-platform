@@ -3,7 +3,6 @@ import { Routes, Route } from 'react-router-dom';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
-import FakeStudyDetailPage from './components/FakeStudyDetailPage';
 import { api } from './api';
 import {
   isE2eAuthBypassed,
@@ -52,21 +51,6 @@ function App() {
               <SignedIn>
                 <AdminPage>
                   <ExperimentDetailPage />
-                </AdminPage>
-              </SignedIn>
-              <SignedOut>
-                <RequireSignIn message="You must sign in to access this page." />
-              </SignedOut>
-            </>
-          }
-        />
-        <Route
-          path="/admin/prolific/fake-studies/:studyId"
-          element={
-            <>
-              <SignedIn>
-                <AdminPage>
-                  <FakeStudyDetailPage />
                 </AdminPage>
               </SignedIn>
               <SignedOut>

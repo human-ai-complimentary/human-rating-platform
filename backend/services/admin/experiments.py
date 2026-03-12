@@ -8,10 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from models import Experiment, ProlificStudyStatus, Question, Rating, Rater, StudyRound
+from models import Experiment, ExperimentRound, Question, Rating, Rater
 from schemas import ExperimentCreate, ExperimentResponse
 from .mappers import build_experiment_response
-from .prolific import delete_study, publish_study
+from .prolific import delete_study
 from .queries import fetch_experiment_or_404, fetch_total_questions_for_experiment
 
 logger = logging.getLogger(__name__)
@@ -91,70 +91,32 @@ async def delete_experiment(
     experiment = await fetch_experiment_or_404(experiment_id, db)
     experiment_name = experiment.name
 
-    # Clean up Prolific study if one exists
-    if settings.prolific.enabled and experiment.prolific_study_id:
-        try:
-            await delete_study(
-                settings=settings.prolific,
-                study_id=experiment.prolific_study_id,
+    if settings.prolific.enabled:
+        round_study_ids = (
+            await db.execute(
+                select(ExperimentRound.prolific_study_id).where(
+                    ExperimentRound.experiment_id == experiment_id
+                )
             )
-            logger.info("Deleted Prolific study: %s", experiment.prolific_study_id)
-        except Exception:
-            logger.exception(
-                "Failed to delete Prolific study %s (continuing with local delete)",
-                experiment.prolific_study_id,
-            )
+        ).scalars().all()
+        for study_id in round_study_ids:
+            try:
+                await delete_study(
+                    settings=settings.prolific,
+                    study_id=study_id,
+                )
+                logger.info("Deleted Prolific study: %s", study_id)
+            except Exception:
+                logger.exception(
+                    "Failed to delete Prolific study %s (continuing with local delete)",
+                    study_id,
+                )
 
     await db.delete(experiment)
     await db.commit()
 
     logger.info("Deleted experiment: id=%s, name=%s", experiment_id, experiment_name)
     return {"message": "Experiment deleted successfully"}
-
-
-async def publish_prolific_study(
-    experiment_id: int,
-    db: AsyncSession,
-) -> dict[str, str]:
-    settings = get_settings()
-    if not settings.prolific.enabled:
-        raise HTTPException(status_code=400, detail="Prolific integration is not enabled")
-
-    experiment = await fetch_experiment_or_404(experiment_id, db)
-    if not experiment.prolific_study_id:
-        raise HTTPException(status_code=400, detail="This experiment has no linked Prolific study")
-
-    try:
-        result = await publish_study(
-            settings=settings.prolific,
-            study_id=experiment.prolific_study_id,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to publish Prolific study %s for experiment %s",
-            experiment.prolific_study_id,
-            experiment_id,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to publish study on Prolific. Please try again.",
-        )
-
-    experiment.prolific_study_status = ProlificStudyStatus(result.get("status", "ACTIVE"))
-    current_round = (
-        await db.execute(
-            select(StudyRound).where(StudyRound.prolific_study_id == experiment.prolific_study_id)
-        )
-    ).scalar_one_or_none()
-    if current_round:
-        current_round.prolific_study_status = experiment.prolific_study_status
-    await db.commit()
-
-    logger.info(
-        "Published Prolific study %s for experiment %s", experiment.prolific_study_id, experiment_id
-    )
-    return {"message": "Study published on Prolific", "status": experiment.prolific_study_status}
-
 
 async def get_experiment_stats(
     experiment_id: int,

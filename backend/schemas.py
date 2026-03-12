@@ -28,7 +28,7 @@ class PilotStudyCreate(BaseModel):
     )
 
 
-class StudyRoundCreate(BaseModel):
+class ExperimentRoundCreate(BaseModel):
     places: int = Field(ge=1)
 
 
@@ -40,10 +40,9 @@ class RecommendationResponse(BaseModel):
     is_complete: bool
 
 
-class StudyRoundResponse(BaseModel):
+class ExperimentRoundResponse(BaseModel):
     id: int
     round_number: int
-    is_pilot: bool
     prolific_study_id: str
     prolific_study_status: ProlificStudyStatus
     places_requested: int
@@ -56,23 +55,6 @@ class StudyRoundResponse(BaseModel):
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
     prolific_mode: ProlificMode
-
-
-class FakeStudyDetailResponse(BaseModel):
-    study_id: str
-    study_status: ProlificStudyStatus
-    experiment_id: int
-    experiment_name: str
-    round_number: int
-    is_pilot: bool
-    places_requested: int
-    description: str
-    estimated_completion_time: int
-    reward: int
-    device_compatibility: list[Literal["desktop", "tablet", "mobile"]]
-    external_study_url: str
-    completion_url: Optional[str] = None
-    created_at: datetime
 
 
 # Experiment schemas
@@ -89,9 +71,6 @@ class ExperimentResponse(BaseModel):
     created_at: datetime
     num_ratings_per_question: int
     prolific_completion_url: Optional[str] = None
-    prolific_study_id: Optional[str] = None
-    prolific_study_status: Optional[ProlificStudyStatus] = None
-    prolific_study_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
 

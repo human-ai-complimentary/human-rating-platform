@@ -99,13 +99,19 @@ class SeedingSettings(_StrictModel):
 class ProlificMode(str, Enum):
     DISABLED = "disabled"
     REAL = "real"
-    FAKE = "fake"
 
 
 class ProlificSettings(_StrictModel):
     mode: ProlificMode = ProlificMode.DISABLED
     api_token: str = ""
     base_url: str = "https://api.prolific.com/api/v1"
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def coerce_legacy_fake_mode(cls, value: object) -> object:
+        if value == "fake":
+            return ProlificMode.DISABLED
+        return value
 
     @property
     def enabled(self) -> bool:

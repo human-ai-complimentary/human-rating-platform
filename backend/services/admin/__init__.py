@@ -6,11 +6,16 @@ from .experiments import (
     delete_experiment,
     get_experiment_stats,
     list_experiments,
-    publish_prolific_study,
 )
-from .fake_studies import get_fake_study_detail
 from .exports import build_export_filename, stream_export_csv_chunks
-from .rounds import calculate_recommendation, list_study_rounds, run_pilot_study, run_study_round
+from .rounds import (
+    calculate_recommendation,
+    close_experiment_round,
+    list_experiment_rounds,
+    publish_experiment_round,
+    run_experiment_round,
+    run_pilot_study,
+)
 from .uploads import list_uploads, upload_questions_csv
 
 __all__ = [
@@ -19,14 +24,14 @@ __all__ = [
     "create_experiment",
     "delete_experiment",
     "get_experiment_analytics",
-    "get_fake_study_detail",
     "get_experiment_stats",
     "list_experiments",
-    "list_study_rounds",
+    "list_experiment_rounds",
     "list_uploads",
-    "publish_prolific_study",
+    "publish_experiment_round",
+    "close_experiment_round",
+    "run_experiment_round",
     "run_pilot_study",
-    "run_study_round",
     "stream_export_csv_chunks",
     "upload_questions_csv",
 ]

@@ -2,10 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from config import get_settings
 from models import Experiment, Question, Rating, Rater, Upload
 from schemas import ExperimentResponse
-from .prolific import build_study_url
 
 QUESTION_PREVIEW_LENGTH = 100
 
@@ -15,25 +13,12 @@ def build_experiment_response(
     question_count: int,
     rating_count: int,
 ) -> ExperimentResponse:
-    settings = get_settings()
-    prolific_study_url = (
-        build_study_url(
-            settings=settings.prolific,
-            site_url=settings.app.site_url,
-            study_id=experiment.prolific_study_id,
-        )
-        if experiment.prolific_study_id
-        else None
-    )
     return ExperimentResponse(
         id=experiment.id,
         name=experiment.name,
         created_at=experiment.created_at,
         num_ratings_per_question=experiment.num_ratings_per_question,
         prolific_completion_url=experiment.prolific_completion_url,
-        prolific_study_id=experiment.prolific_study_id,
-        prolific_study_status=experiment.prolific_study_status,
-        prolific_study_url=prolific_study_url,
         question_count=question_count,
         rating_count=rating_count,
     )

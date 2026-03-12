@@ -60,35 +60,6 @@ class Experiment(SQLModel, table=True):
         default=None,
         sa_column=Column(String(2048), nullable=True),
     )
-    prolific_study_id: Optional[str] = Field(
-        default=None,
-        sa_column=Column(String(128), nullable=True),
-    )
-    prolific_completion_code: Optional[str] = Field(
-        default=None,
-        sa_column=Column(String(64), nullable=True),
-    )
-    prolific_study_status: Optional[ProlificStudyStatus] = Field(
-        default=None,
-        sa_column=Column(String(32), nullable=True),
-    )
-    # Stored at pilot creation; reused for all subsequent rounds
-    prolific_description: Optional[str] = Field(
-        default=None,
-        sa_column=Column(Text, nullable=True),
-    )
-    prolific_reward: Optional[int] = Field(
-        default=None,
-        sa_column=Column(Integer, nullable=True),
-    )
-    prolific_estimated_completion_time: Optional[int] = Field(
-        default=None,
-        sa_column=Column(Integer, nullable=True),
-    )
-    prolific_device_compatibility: Optional[str] = Field(
-        default=None,
-        sa_column=Column(String(256), nullable=True),
-    )  # JSON-encoded list, e.g. '["desktop"]'
 
 
 class Question(SQLModel, table=True):
@@ -200,10 +171,17 @@ class Rating(SQLModel, table=True):
     )
 
 
-class StudyRound(SQLModel, table=True):
-    """Tracks each Prolific study launched for an experiment (pilot + main rounds)."""
+class ExperimentRound(SQLModel, table=True):
+    """Tracks each Prolific study launched for an experiment."""
 
-    __tablename__ = "study_rounds"
+    __tablename__ = "experiment_rounds"
+    __table_args__ = (
+        UniqueConstraint(
+            "experiment_id",
+            "round_number",
+            name="uq_experiment_round_number",
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     experiment_id: int = Field(
@@ -216,14 +194,16 @@ class StudyRound(SQLModel, table=True):
     round_number: int = Field(
         sa_column=Column(Integer, nullable=False)
     )  # 0 = pilot, 1+ = main rounds
-    is_pilot: bool = Field(
-        default=False,
-        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
-    )
     prolific_study_id: str = Field(sa_column=Column(String(128), nullable=False))
     prolific_study_status: ProlificStudyStatus = Field(
         sa_column=Column(String(32), nullable=False)
     )
+    description: str = Field(sa_column=Column(Text, nullable=False))
+    estimated_completion_time: int = Field(sa_column=Column(Integer, nullable=False))
+    reward: int = Field(sa_column=Column(Integer, nullable=False))
+    device_compatibility: str = Field(
+        sa_column=Column(String(256), nullable=False)
+    )  # JSON-encoded list, e.g. '["desktop"]'
     places_requested: int = Field(sa_column=Column(Integer, nullable=False))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

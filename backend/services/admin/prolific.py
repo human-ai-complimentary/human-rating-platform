@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 COMPLETION_CODE_LENGTH = 8
 COMPLETION_URL_TEMPLATE = "https://app.prolific.com/submissions/complete?cc={code}"
 REAL_STUDY_URL_TEMPLATE = "https://app.prolific.com/researcher/workspaces/studies/{study_id}"
-FAKE_STUDY_URL_TEMPLATE = "{site_url}/admin/prolific/fake-studies/{study_id}"
 
 
 def generate_completion_code() -> str:
@@ -42,9 +41,7 @@ def build_external_study_url(*, site_url: str, experiment_id: int) -> str:
     )
 
 
-def build_study_url(*, settings: ProlificSettings, site_url: str, study_id: str) -> str:
-    if settings.mode == ProlificMode.FAKE:
-        return FAKE_STUDY_URL_TEMPLATE.format(site_url=site_url.rstrip("/"), study_id=study_id)
+def build_study_url(*, study_id: str) -> str:
     return REAL_STUDY_URL_TEMPLATE.format(study_id=study_id)
 
 
@@ -97,10 +94,35 @@ async def _publish_real_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> dict:
+    return await _transition_real_study(
+        settings=settings,
+        study_id=study_id,
+        action="PUBLISH",
+    )
+
+
+async def _stop_real_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> dict:
+    return await _transition_real_study(
+        settings=settings,
+        study_id=study_id,
+        action="STOP",
+    )
+
+
+async def _transition_real_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+    action: str,
+) -> dict:
     async with _build_client(settings) as client:
         response = await client.post(
             f"/studies/{study_id}/transition/",
-            json={"action": "PUBLISH"},
+            json={"action": action},
         )
         response.raise_for_status()
         return response.json()
@@ -119,8 +141,15 @@ async def _delete_real_study(
         response.raise_for_status()
 
 
-def _build_fake_study_id() -> str:
-    return f"fake-study-{secrets.token_hex(6)}"
+async def _get_real_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> dict:
+    async with _build_client(settings) as client:
+        response = await client.get(f"/studies/{study_id}/")
+        response.raise_for_status()
+        return response.json()
 
 
 async def create_study(
@@ -135,12 +164,6 @@ async def create_study(
     completion_code: str,
     device_compatibility: list[str] | None = None,
 ) -> dict[str, str]:
-    if settings.mode == ProlificMode.FAKE:
-        return {
-            "id": _build_fake_study_id(),
-            "status": "UNPUBLISHED",
-        }
-
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("create_study called while Prolific mode is disabled")
 
@@ -162,13 +185,24 @@ async def publish_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> dict[str, str]:
-    if settings.mode == ProlificMode.FAKE:
-        return {"id": study_id, "status": "ACTIVE"}
-
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("publish_study called while Prolific mode is disabled")
 
     return await _publish_real_study(
+        settings=settings,
+        study_id=study_id,
+    )
+
+
+async def stop_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> dict[str, str]:
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("stop_study called while Prolific mode is disabled")
+
+    return await _stop_real_study(
         settings=settings,
         study_id=study_id,
     )
@@ -179,13 +213,24 @@ async def delete_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> None:
-    if settings.mode == ProlificMode.FAKE:
-        return
-
     if settings.mode != ProlificMode.REAL:
         raise RuntimeError("delete_study called while Prolific mode is disabled")
 
     await _delete_real_study(
+        settings=settings,
+        study_id=study_id,
+    )
+
+
+async def get_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+) -> dict[str, str]:
+    if settings.mode != ProlificMode.REAL:
+        raise RuntimeError("get_study called while Prolific mode is disabled")
+
+    return await _get_real_study(
         settings=settings,
         study_id=study_id,
     )
