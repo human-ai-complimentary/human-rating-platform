@@ -173,6 +173,7 @@ async def get_experiment_analytics(
         experiment_id=experiment_id, db=db, include_preview=include_preview
     )
 
+
 @secure_router.post(
     "/experiments/{experiment_id}/prolific/pilot",
     response_model=ExperimentRoundResponse,
@@ -182,9 +183,7 @@ async def run_pilot_study(
     payload: PilotStudyCreate,
     db: AsyncSession = Depends(get_session),
 ):
-    return await admin_service.run_pilot_study(
-        experiment_id=experiment_id, payload=payload, db=db
-    )
+    return await admin_service.run_pilot_study(experiment_id=experiment_id, payload=payload, db=db)
 
 
 @secure_router.get(
@@ -224,9 +223,7 @@ async def list_experiment_rounds(
     experiment_id: int,
     db: AsyncSession = Depends(get_session),
 ):
-    return await admin_service.list_experiment_rounds(
-        experiment_id=experiment_id, db=db
-    )
+    return await admin_service.list_experiment_rounds(experiment_id=experiment_id, db=db)
 
 
 @secure_router.post("/experiments/{experiment_id}/prolific/rounds/{round_id}/publish")

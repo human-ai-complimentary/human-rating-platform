@@ -433,7 +433,7 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
 def test_migration_runner_current_and_history_commands_succeed():
     revision_pattern = re.compile(r'^revision:\s*str\s*=\s*"([^"]+)"', re.MULTILINE)
-    down_pattern = re.compile(r'^down_revision:\s*.*=\s*(.+)$', re.MULTILINE)
+    down_pattern = re.compile(r"^down_revision:\s*.*=\s*(.+)$", re.MULTILINE)
     revisions: set[str] = set()
     down_revisions: set[str] = set()
 
@@ -625,7 +625,9 @@ def test_prolific_round_names_include_round_label(client: TestClient, enable_pro
     assert pilot_payload["name"] == f"{experiment['name']} - Pilot"
 
     _mock_publish_study(study_id="PILOT_STUDY")
-    publish_resp = client.post(f"/api/admin/experiments/{experiment['id']}/prolific/rounds/1/publish")
+    publish_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds/1/publish"
+    )
     assert publish_resp.status_code == 200
 
     _mock_close_study(study_id="PILOT_STUDY")
@@ -802,12 +804,12 @@ def test_prolific_round_creation_requires_closing_previous_round(
         json={"places": 4},
     )
     assert before_publish.status_code == 400
-    assert before_publish.json()["detail"] == "Close the previous round before launching a new round"
+    assert (
+        before_publish.json()["detail"] == "Close the previous round before launching a new round"
+    )
 
     _mock_publish_study()
-    publish_resp = client.post(
-        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish"
-    )
+    publish_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
     assert publish_resp.status_code == 200
 
     while_active = client.post(
@@ -818,9 +820,7 @@ def test_prolific_round_creation_requires_closing_previous_round(
     assert while_active.json()["detail"] == "Close the previous round before launching a new round"
 
     _mock_close_study()
-    close_resp = client.post(
-        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close"
-    )
+    close_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close")
     assert close_resp.status_code == 200
     assert close_resp.json()["status"] == "AWAITING_REVIEW"
 
@@ -841,9 +841,7 @@ def test_prolific_round_history_and_completion_url_progression(
     experiment, _pilot = _create_prolific_experiment(client)
     experiment_id = experiment["id"]
     initial_experiment = next(
-        item
-        for item in client.get("/api/admin/experiments").json()
-        if item["id"] == experiment_id
+        item for item in client.get("/api/admin/experiments").json() if item["id"] == experiment_id
     )
     initial_completion_url = initial_experiment["prolific_completion_url"]
 
@@ -869,9 +867,7 @@ def test_prolific_round_history_and_completion_url_progression(
     assert publish_round_one.status_code == 200
 
     _mock_close_study(study_id="ROUND_STUDY_1", closed_status="COMPLETED")
-    close_round_one = client.post(
-        f"/api/admin/experiments/{experiment_id}/prolific/rounds/2/close"
-    )
+    close_round_one = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/2/close")
     assert close_round_one.status_code == 200
 
     _mock_create_study(study_id="ROUND_STUDY_2")
@@ -886,9 +882,7 @@ def test_prolific_round_history_and_completion_url_progression(
     assert [round_["places_requested"] for round_ in rounds] == [5, 4, 2]
 
     stored = next(
-        item
-        for item in client.get("/api/admin/experiments").json()
-        if item["id"] == experiment_id
+        item for item in client.get("/api/admin/experiments").json() if item["id"] == experiment_id
     )
     assert stored["prolific_completion_url"] == initial_completion_url
 
@@ -955,14 +949,23 @@ def test_prolific_delete_calls_prolific_api_for_all_rounds(client: TestClient, e
     experiment_id = experiment["id"]
 
     _mock_publish_study()
-    assert client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish").status_code == 200
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish").status_code
+        == 200
+    )
     _mock_close_study()
-    assert client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close").status_code == 200
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close").status_code
+        == 200
+    )
     _mock_create_study(study_id="ROUND_STUDY_DELETE")
-    assert client.post(
-        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
-        json={"places": 4},
-    ).status_code == 200
+    assert (
+        client.post(
+            f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+            json={"places": 4},
+        ).status_code
+        == 200
+    )
 
     pilot_delete = _mock_delete_study(study_id=PROLIFIC_STUDY_ID)
     round_delete = _mock_delete_study(study_id="ROUND_STUDY_DELETE")

@@ -5,11 +5,11 @@ Revises: faf2ebe67bd9
 Create Date: 2026-03-05 03:24:36.430448
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
 
 
 # revision identifiers, used by Alembic.

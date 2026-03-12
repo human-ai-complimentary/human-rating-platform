@@ -195,9 +195,7 @@ class ExperimentRound(SQLModel, table=True):
         sa_column=Column(Integer, nullable=False)
     )  # 0 = pilot, 1+ = main rounds
     prolific_study_id: str = Field(sa_column=Column(String(128), nullable=False))
-    prolific_study_status: ProlificStudyStatus = Field(
-        sa_column=Column(String(32), nullable=False)
-    )
+    prolific_study_status: ProlificStudyStatus = Field(sa_column=Column(String(32), nullable=False))
     description: str = Field(sa_column=Column(Text, nullable=False))
     estimated_completion_time: int = Field(sa_column=Column(Integer, nullable=False))
     reward: int = Field(sa_column=Column(Integer, nullable=False))

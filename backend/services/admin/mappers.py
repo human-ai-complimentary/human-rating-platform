@@ -7,6 +7,7 @@ from schemas import ExperimentResponse
 
 QUESTION_PREVIEW_LENGTH = 100
 
+
 def build_experiment_response(
     experiment: Experiment,
     *,

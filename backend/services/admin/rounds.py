@@ -145,12 +145,16 @@ async def _list_round_models(
     db: AsyncSession,
 ) -> list[ExperimentRound]:
     return (
-        await db.execute(
-            select(ExperimentRound)
-            .where(ExperimentRound.experiment_id == experiment_id)
-            .order_by(ExperimentRound.round_number)
+        (
+            await db.execute(
+                select(ExperimentRound)
+                .where(ExperimentRound.experiment_id == experiment_id)
+                .order_by(ExperimentRound.round_number)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 async def _create_prolific_study_for_round(
@@ -206,8 +210,7 @@ async def calculate_recommendation(
         )
 
     times = [
-        (rating.time_submitted - rating.time_started).total_seconds()
-        for rating, _, _ in ratings
+        (rating.time_submitted - rating.time_started).total_seconds() for rating, _, _ in ratings
     ]
     avg_time = sum(times) / len(times)
 
@@ -216,21 +219,17 @@ async def calculate_recommendation(
         rating_counts[question.id] = rating_counts.get(question.id, 0) + 1
 
     all_question_ids = (
-        await db.execute(
-            select(Question.id).where(Question.experiment_id == experiment_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(Question.id).where(Question.experiment_id == experiment_id)))
+        .scalars()
+        .all()
+    )
 
     target = experiment.num_ratings_per_question
-    remaining_actions = sum(
-        max(0, target - rating_counts.get(qid, 0)) for qid in all_question_ids
-    )
+    remaining_actions = sum(max(0, target - rating_counts.get(qid, 0)) for qid in all_question_ids)
 
     is_complete = remaining_actions == 0
     total_hours = (remaining_actions * avg_time) / SESSION_DURATION_SECONDS
-    recommended_places = (
-        math.ceil(total_hours * ROUND_BUFFER_FACTOR) if not is_complete else 0
-    )
+    recommended_places = math.ceil(total_hours * ROUND_BUFFER_FACTOR) if not is_complete else 0
 
     return RecommendationResponse(
         avg_time_per_question_seconds=round(avg_time, 2),
@@ -330,9 +329,7 @@ async def run_experiment_round(
         )
 
     next_round_number = latest_round.round_number + 1
-    device_compatibility = _parse_device_compatibility(
-        pilot_round.device_compatibility
-    )
+    device_compatibility = _parse_device_compatibility(pilot_round.device_compatibility)
 
     try:
         result = await _create_prolific_study_for_round(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,12 +92,16 @@ async def delete_experiment(
 
     if settings.prolific.enabled:
         round_study_ids = (
-            await db.execute(
-                select(ExperimentRound.prolific_study_id).where(
-                    ExperimentRound.experiment_id == experiment_id
+            (
+                await db.execute(
+                    select(ExperimentRound.prolific_study_id).where(
+                        ExperimentRound.experiment_id == experiment_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for study_id in round_study_ids:
             try:
                 await delete_study(
@@ -117,6 +120,7 @@ async def delete_experiment(
 
     logger.info("Deleted experiment: id=%s, name=%s", experiment_id, experiment_name)
     return {"message": "Experiment deleted successfully"}
+
 
 async def get_experiment_stats(
     experiment_id: int,
