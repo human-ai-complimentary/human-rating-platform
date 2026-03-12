@@ -41,6 +41,7 @@ export interface Session {
   session_end_time: string;
   experiment_name: string;
   completion_url: string | null;
+  rater_session_token: string;
 }
 
 export interface RatingSubmit {

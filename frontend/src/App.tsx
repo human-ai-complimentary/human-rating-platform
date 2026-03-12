@@ -102,12 +102,14 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   // Allow overriding the Clerk JWT template via env; default to 'admin'.
   const ADMIN_JWT_TEMPLATE = (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) || 'admin';
 
+  // Derive a stable email value to avoid complex expressions in deps
+  const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
+
   React.useEffect(() => {
     if (!isLoaded) return; // wait for Clerk to load
     if (!isSignedIn) return; // SignedOut wrapper handles this
 
     let cancelled = false;
-    const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
     if (!email) return;
 
     (async () => {
@@ -146,7 +148,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress, getToken]);
+  }, [isLoaded, isSignedIn, email, getToken, ADMIN_JWT_TEMPLATE]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return <InfoCard title="Preparing admin session…" />;

@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Rating, Rater
+from config import Settings
 from schemas import (
     QuestionResponse,
     RaterStartResponse,
@@ -20,6 +21,7 @@ from .mappers import (
     build_rater_start_response,
     build_session_end_time,
 )
+from .session_token import issue_rater_session_token
 from .queries import (
     fetch_eligible_questions_with_counts,
     fetch_existing_rater_for_experiment,
@@ -50,10 +52,11 @@ def _normalize_to_utc_aware(value: datetime) -> datetime:
 
 async def start_session(
     *,
+    settings: Settings,
     experiment_id: int,
     prolific_pid: str,
-    study_id: Optional[str],
-    session_id: Optional[str],
+    study_id: str,
+    session_id: str,
     is_preview: bool = False,
     db: AsyncSession,
 ) -> RaterStartResponse:
@@ -67,11 +70,15 @@ async def start_session(
 
     if existing_rater:
         validate_existing_rater_can_resume(existing_rater)
+        token = issue_rater_session_token(
+            settings=settings, rater_id=existing_rater.id, experiment_id=experiment_id
+        )
         return build_rater_start_response(
             rater_id=existing_rater.id,
             session_start=existing_rater.session_start,
             experiment_name=experiment.name,
             completion_url=experiment.prolific_completion_url,
+            rater_session_token=token,
         )
 
     rater = Rater(
@@ -94,11 +101,16 @@ async def start_session(
         experiment_id,
     )
 
+    token = issue_rater_session_token(
+        settings=settings, rater_id=rater.id, experiment_id=experiment_id
+    )
+
     return build_rater_start_response(
         rater_id=rater.id,
         session_start=rater.session_start,
         experiment_name=experiment.name,
         completion_url=experiment.prolific_completion_url,
+        rater_session_token=token,
     )
 
 
