@@ -261,7 +261,7 @@ Top‑level convenience envs (not nested):
 - `ADMIN_ALLOWLIST` — comma‑separated or JSON array of admin emails
 - `APP_SECRET_KEY` — HMAC signer for the HTTP‑only admin session cookie
 - `RATER_SESSION_SECRET_KEY` — dedicated HMAC signer for rater session tokens (falls back to `APP_SECRET_KEY` if unset)
-- `RATER_SESSION_TTL_SECONDS` — TTL in seconds for rater session tokens (defaults to 3600; align with session duration)
+- `RATER_SESSION_TTL_SECONDS` — TTL in seconds for rater session tokens (defaults to 3600 = 60 minutes; same as session duration)
 - `HRP_SESSION_COOKIE`, `HRP_SESSION_MAX_AGE`, `COOKIE_SECURE` — cookie name/ttl/secure flag
  - `ADMIN_AUTH_ENABLED` — set to `false` to bypass admin auth in dev/tests
 
@@ -463,7 +463,7 @@ Auth and session flow:
 - Multiple browser tabs are not specially synchronized; the backend prevents duplicate ratings for the same question, but running in two tabs may be confusing and is not recommended.
 - The timer does not auto‑submit partial answers on expiry. Submissions after expiry receive 403 from the API.
 
-Operational note: Ensure `RATER_SESSION_TTL_SECONDS` is greater than or equal to the session duration to avoid early token expiry (defaults to 3600s).
+Operational note: Default TTL matches the session duration (3600s = 60 minutes).
 
 ---
 
