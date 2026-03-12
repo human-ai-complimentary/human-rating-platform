@@ -454,6 +454,17 @@ Auth and session flow:
 - Token shape: `v1.<payload>.<sig>` where payload is base64url JSON `{ rid, eid, iat, exp }` and `sig = HMAC‑SHA256(payload, RATER_SESSION_SECRET_KEY or APP_SECRET_KEY)`.
 - The backend verifies signature and TTL, then binds the token’s `experiment_id` to the server‑side rater record to prevent cross‑experiment spoofing.
 
+#### Rater session behavior (refresh, re‑entry)
+
+- Prolific params remain in the URL. They are not considered secrets and are visible on the initial redirect from Prolific.
+- The frontend persists the rater session in `sessionStorage` to survive accidental refreshes. On reload, the app restores the session from storage, validates it via `/raters/session-status`, and continues without requiring Prolific params again.
+- Storage is cleared when the session completes or expires. If a stored token is expired, the app shows a “Session expired” message.
+- Re‑entering via the Prolific link while the session is still active resumes the same rater server‑side and issues a fresh token. If the session has ended or expired, `/raters/start` returns 403.
+- Multiple browser tabs are not specially synchronized; the backend prevents duplicate ratings for the same question, but running in two tabs may be confusing and is not recommended.
+- The timer does not auto‑submit partial answers on expiry. Submissions after expiry receive 403 from the API.
+
+Operational note: Ensure `RATER_SESSION_TTL_SECONDS` is greater than or equal to the session duration to avoid early token expiry (defaults to 3600s).
+
 ---
 
 ## Supported Targets

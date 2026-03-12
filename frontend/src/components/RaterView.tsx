@@ -6,6 +6,7 @@ import QuestionCard from './QuestionCard';
 import type { Session, Question } from '../types';
 
 function RaterView() {
+  const STORAGE_KEY = 'hrp_rater_session';
   const [searchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
@@ -45,6 +46,35 @@ function RaterView() {
   const startedRef = useRef(false);
 
   useEffect(() => {
+    // Resume path: if we have a stored session, restore it and skip param checks
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored && !startedRef.current) {
+      startedRef.current = true;
+      try {
+        const parsed = JSON.parse(stored) as { session: Session } | { token: string; session: Session };
+        const sess = 'session' in parsed ? parsed.session : null;
+        const token = (sess && (sess as any).rater_session_token) || ('token' in parsed ? (parsed as any).token : null);
+        if (sess && token) {
+          setSession(sess);
+          setSessionToken(token);
+          setLoading(true);
+          // Hydrate progress and question in parallel
+          Promise.all([
+            api
+              .getSessionStatus(token)
+              .then(s => setQuestionsCompleted(s.questions_completed))
+              .catch(() => {}),
+            loadNextQuestion(token),
+          ]).finally(() => setLoading(false));
+          return;
+        }
+      } catch {
+        // Corrupt storage; clear and continue to normal flow
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
+    }
+
+    // Normal start flow: require Prolific params
     if (!experimentId || !prolificId || !studyId || !sessionId) {
       setError('Please access this study from Prolific.');
       setLoading(false);
@@ -56,20 +86,19 @@ function RaterView() {
     if (startedRef.current) return;
     startedRef.current = true;
 
-    api.startSession(experimentId, prolificId, studyId, sessionId, isPreview)
+    api
+      .startSession(experimentId, prolificId, studyId, sessionId, isPreview)
       .then(data => {
         setSession(data);
         setSessionToken(data.rater_session_token);
-        // Remove Prolific params from URL after starting session
+        // Persist session so a refresh can resume without Prolific params
         try {
-          const url = new URL(window.location.href);
-          url.searchParams.delete('PROLIFIC_PID');
-          url.searchParams.delete('STUDY_ID');
-          url.searchParams.delete('SESSION_ID');
-          window.history.replaceState({}, '', url.toString());
-        } catch (err) {
-          // Ignore failures from URL/History APIs (e.g., older browsers)
-          void err;
+          sessionStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ session: data })
+          );
+        } catch {
+          // Ignore storage failures (private mode, quota, etc.)
         }
         return loadNextQuestion(data.rater_session_token);
       })
@@ -82,6 +111,14 @@ function RaterView() {
   useEffect(() => {
     if (!(sessionExpired || allDone)) return;
     const completionUrl = session?.completion_url;
+
+    // Clear persisted session once we're done or expired (always)
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+
     if (!completionUrl) return;
 
     const timer = setTimeout(() => {
