@@ -6,7 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from database import get_session
-from schemas import ExperimentCreate, ExperimentResponse, PlatformStatus
+from schemas import (
+    ExperimentRoundCreate,
+    ExperimentRoundResponse,
+    ExperimentCreate,
+    ExperimentResponse,
+    PilotStudyCreate,
+    PlatformStatus,
+    RecommendationResponse,
+)
 from services import admin as admin_service
 from auth import require_admin, get_admin_manager
 from services.authn import verify_clerk_token_and_get_email
@@ -66,7 +74,10 @@ async def admin_logout(manager=Depends(get_admin_manager)):
 @router.get("/platform-status", response_model=PlatformStatus)
 async def get_platform_status():
     settings = get_settings()
-    return PlatformStatus(prolific_enabled=settings.prolific.enabled)
+    return PlatformStatus(
+        prolific_enabled=settings.prolific.enabled,
+        prolific_mode=settings.prolific.mode,
+    )
 
 
 @secure_router.post("/experiments", response_model=ExperimentResponse)
@@ -141,14 +152,6 @@ async def delete_experiment(
     return await admin_service.delete_experiment(experiment_id=experiment_id, db=db)
 
 
-@secure_router.post("/experiments/{experiment_id}/prolific/publish")
-async def publish_prolific_study(
-    experiment_id: int,
-    db: AsyncSession = Depends(get_session),
-):
-    return await admin_service.publish_prolific_study(experiment_id=experiment_id, db=db)
-
-
 @secure_router.get("/experiments/{experiment_id}/stats")
 async def get_experiment_stats(
     experiment_id: int,
@@ -168,4 +171,82 @@ async def get_experiment_analytics(
 ):
     return await admin_service.get_experiment_analytics(
         experiment_id=experiment_id, db=db, include_preview=include_preview
+    )
+
+
+@secure_router.post(
+    "/experiments/{experiment_id}/prolific/pilot",
+    response_model=ExperimentRoundResponse,
+)
+async def run_pilot_study(
+    experiment_id: int,
+    payload: PilotStudyCreate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.run_pilot_study(experiment_id=experiment_id, payload=payload, db=db)
+
+
+@secure_router.get(
+    "/experiments/{experiment_id}/prolific/recommend", response_model=RecommendationResponse
+)
+async def get_prolific_recommendation(
+    experiment_id: int,
+    include_preview: bool = Query(False),
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.calculate_recommendation(
+        experiment_id=experiment_id,
+        db=db,
+        include_preview=include_preview,
+    )
+
+
+@secure_router.post(
+    "/experiments/{experiment_id}/prolific/rounds",
+    response_model=ExperimentRoundResponse,
+)
+async def run_experiment_round(
+    experiment_id: int,
+    payload: ExperimentRoundCreate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.run_experiment_round(
+        experiment_id=experiment_id, payload=payload, db=db
+    )
+
+
+@secure_router.get(
+    "/experiments/{experiment_id}/prolific/rounds",
+    response_model=list[ExperimentRoundResponse],
+)
+async def list_experiment_rounds(
+    experiment_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.list_experiment_rounds(experiment_id=experiment_id, db=db)
+
+
+@secure_router.post("/experiments/{experiment_id}/prolific/rounds/{round_id}/publish")
+async def publish_experiment_round(
+    experiment_id: int,
+    round_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.publish_experiment_round(
+        experiment_id=experiment_id,
+        round_id=round_id,
+        db=db,
+    )
+
+
+@secure_router.post("/experiments/{experiment_id}/prolific/rounds/{round_id}/close")
+async def close_experiment_round(
+    experiment_id: int,
+    round_id: int,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.close_experiment_round(
+        experiment_id=experiment_id,
+        round_id=round_id,
+        db=db,
     )

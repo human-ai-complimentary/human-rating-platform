@@ -65,10 +65,13 @@ This project uses Clerk for frontend identity and a backend HTTP‑only cookie f
   - Name: `admin`
   - Claims JSON:
     ```json
-    { "email": "{{user.primary_email_address}}" }
+    {
+      "aud": "human-rating-platform-admin-api",
+      "email": "{{user.primary_email_address}}"
+    }
     ```
-  - Audience: set to match `CLERK__AUDIENCE`.
-  - Issuer/JWKS: the values above are auto-derived by Clerk; copy them into backend env.
+  - `aud` must match `CLERK__AUDIENCE`.
+  - `iss` is added by Clerk automatically. Copy the Issuer and JWKS endpoint shown in the template UI into backend env.
 - Frontend usage:
   - Retrieve token with `useAuth().getToken({ template: 'admin' })` and send `Authorization: Bearer <token>` to `/api/admin/auth/login`.
 
@@ -76,6 +79,8 @@ This project uses Clerk for frontend identity and a backend HTTP‑only cookie f
 
 - Controlled by env var `ADMIN_ALLOWLIST` (comma‑separated or JSON array of emails).
 - If your email isn’t in the allowlist, admin login returns 403 and the UI shows a friendly explanation.
+
+```bash
 # Admin allowlist + session cookie
 ADMIN_ALLOWLIST=alice@example.com,bob@example.com
 APP_SECRET_KEY=please-change-me-to-a-long-random-string
@@ -122,7 +127,7 @@ Clerk Dashboard: add your Render web domain under Settings → Domains so Clerk 
 make env.sync
 ```
 
-Creates `backend/.env` and `frontend/.env` from templates. Then set:
+Creates `backend/.env`, `frontend/.env`, and `frontend/.env.local` from templates. Then set:
 
 - `frontend/.env.local`
   
@@ -253,6 +258,7 @@ Env keys use Pydantic's nested `__` delimiter for nested settings models:
 - `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
 - `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
 - `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
+- `PROLIFIC__MODE` — `disabled` or `real`
 - `PROLIFIC__API_TOKEN` — Prolific API token (optional; enables automated study management)
 - `APP__SITE_URL` — public frontend URL used to build Prolific study links (default: `http://localhost:5173`)
 
@@ -268,6 +274,46 @@ Frontend env (`frontend/.env`):
 - `VITE_API_HOST` — optional API origin for cross-origin deployments
   - **Local dev (default):** empty → frontend uses same-origin `/api` via Vite proxy
   - **Render example:** `https://human-rating-platform-api-uxnt.onrender.com`
+
+## End-To-End Testing
+
+This project uses three complementary end-to-end testing layers:
+
+- `make test` runs the backend characterization suite against a real Postgres database with Alembic migrations applied. It exercises the API and service layer, including experiment creation, CSV uploads, rater sessions, analytics, exports, and Prolific study management with mocked Prolific HTTP responses.
+- `cd frontend && npm run test:e2e` runs Playwright browser smoke tests against the local frontend. These tests mock `/api` responses and verify key admin and rater flows in the UI.
+- A small number of Prolific-facing checks remain manual because they depend on an external platform, human participation, and spending real money.
+
+Together, these layers provide good coverage of the local application behavior while keeping external dependencies out of automated test runs.
+
+### Browser Smoke Coverage
+
+The Playwright suite starts the frontend with `VITE_E2E_BYPASS_AUTH=true`. This bypasses Clerk only for the smoke harness so the tests can focus on application behavior without changing the production authentication flow.
+
+The current browser smoke tests verify:
+
+- creating an experiment from the admin dashboard
+- navigating from experiment creation to the detail page
+- uploading a CSV and seeing the upload summary update
+- showing the pilot form before any Prolific rounds exist
+- creating a pilot round and rendering the resulting round history
+- showing recommendation data after the pilot flow returns it
+- limiting the publish action to the currently linked unpublished round
+- launching a follow-on round and appending it to round history
+- opening the preview participant flow with `preview=true`
+- updating export and stats requests when include-preview is enabled
+
+### Manual Prolific Checklist
+
+Use the following checklist when validating a real study against Prolific:
+
+1. Create an experiment from `/admin` with the intended name and ratings-per-question.
+2. Upload the CSV on the experiment detail page and confirm the question count matches the file.
+3. In `Prolific Study Rounds`, complete the pilot form and click `Run Pilot Study`. The default pilot size is `5` raters and is usually a reasonable starting point.
+4. Open the draft on Prolific and review the study details before publishing.
+5. Publish the draft manually on Prolific when you are ready for participants to start.
+6. Wait for the pilot to complete, then review the recommendation panel. If the reported average time per question looks implausible, investigate before launching another round.
+7. Launch the next round from the recommendation panel, publish it manually on Prolific, and wait for completion.
+8. Repeat until the application reports `All questions have enough ratings!`.
 
 ---
 
@@ -327,7 +373,8 @@ Set in repo → **Settings** → **Secrets and variables** → **Actions**:
 - `DATABASE__URL` — Render Postgres internal connection string
 - `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
 - `APP__SITE_URL` — public frontend URL, e.g. `https://human-rating-platform-web.onrender.com`
-- `PROLIFIC__API_TOKEN` — Prolific API token (optional; omit to use manual workflow)
+- `PROLIFIC__MODE` — `disabled` or `real`
+- `PROLIFIC__API_TOKEN` — Prolific API token (required only when `PROLIFIC__MODE=real`)
 
 **Web service** (set in Render Dashboard → Web service → Environment):
 - `VITE_API_HOST` — public API origin, e.g. `https://human-rating-platform-api-uxnt.onrender.com`
@@ -386,28 +433,25 @@ q2,"Explain photosynthesis","Plants convert sunlight...",,FT
 
 ## Prolific Integration
 
-There are two modes, depending on whether `PROLIFIC__API_TOKEN` is set.
+The Prolific integration has two explicit modes controlled by `PROLIFIC__MODE`.
 
-### Automated (recommended)
+### Disabled
 
-Set `PROLIFIC__API_TOKEN` in `backend/.env` (or as an env var on your server). The platform will create, publish, and delete Prolific studies via their API.
+Set `PROLIFIC__MODE=disabled` to hide the Prolific round workflow entirely. This is useful when you want to use the platform without any Prolific-specific automation.
 
-1. **Create an experiment** in the admin UI — fill in the Prolific fields (description, reward, estimated time, number of places).
-2. **Upload questions** via CSV.
-3. The backend creates a **draft** study on Prolific automatically, with the correct study URL and completion code.
-4. **Preview** the rater experience using the "Preview as Participant" button.
-5. **Publish** the study from the experiment detail page when ready.
-6. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
+### Real
 
-### Manual (no API token)
+Set `PROLIFIC__MODE=real` and provide `PROLIFIC__API_TOKEN` to use the real Prolific API. In this mode, the platform creates, publishes, and deletes studies on Prolific.
 
-If `PROLIFIC__API_TOKEN` is not set, the Prolific fields are hidden and the platform works with manual URL copy-paste:
+Typical workflow:
 
 1. **Create an experiment** in the admin UI.
 2. **Upload questions** via CSV.
-3. **Copy the study URL** from the experiment detail page.
-4. **Paste it into Prolific** as the external study URL (Prolific Dashboard → Study → Study Link).
-5. **Set the completion URL** in the experiment — this is where raters are redirected after finishing.
+3. In **Prolific Study Rounds**, enter the pilot details and click **Run Pilot Study**.
+4. The backend creates a **draft** study on Prolific with the correct study URL and completion code.
+5. **Preview** the rater experience using **Preview as Participant**.
+6. **Publish** the study from the experiment detail page when ready.
+7. **Delete** an experiment and the linked Prolific study is cleaned up automatically.
 
 ### Study URL format
 
@@ -427,7 +471,7 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 
 - `POST /api/admin/auth/login` — issue HTTP-only admin cookie for allowlisted email
 - `POST /api/admin/auth/logout` — clear admin cookie
-- `GET /api/admin/platform-status` — check platform capabilities (e.g. Prolific enabled)
+- `GET /api/admin/platform-status` — check platform capabilities and Prolific mode
 - `POST /api/admin/experiments` — create experiment
 - `GET /api/admin/experiments` — list experiments
 - `POST /api/admin/experiments/{id}/upload` — upload question CSV
@@ -435,7 +479,12 @@ Interactive Swagger docs are available at `/docs` when the backend is running.
 - `GET /api/admin/experiments/{id}/stats` — experiment statistics
 - `GET /api/admin/experiments/{id}/analytics` — rating analytics
 - `GET /api/admin/experiments/{id}/export` — export ratings as CSV
-- `POST /api/admin/experiments/{id}/prolific/publish` — publish linked Prolific study
+- `POST /api/admin/experiments/{id}/prolific/pilot` — create the pilot round draft
+- `GET /api/admin/experiments/{id}/prolific/recommend` — calculate the next-round recommendation
+- `GET /api/admin/experiments/{id}/prolific/rounds` — list Prolific rounds for the experiment
+- `POST /api/admin/experiments/{id}/prolific/rounds` — create a follow-on round draft
+- `POST /api/admin/experiments/{id}/prolific/rounds/{round_id}/publish` — publish an unpublished round
+- `POST /api/admin/experiments/{id}/prolific/rounds/{round_id}/close` — close an active round
 - `DELETE /api/admin/experiments/{id}` — delete experiment (+ Prolific study if linked)
 
 ### Rater

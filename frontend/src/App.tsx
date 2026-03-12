@@ -1,10 +1,19 @@
 import React from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser, useAuth, UserButton } from '@clerk/clerk-react';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
 import { api } from './api';
+import {
+  isE2eAuthBypassed,
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  useAuth,
+  useUser,
+  UserButton,
+} from './auth';
 
 function App() {
   return (
@@ -101,14 +110,18 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   const [message, setMessage] = React.useState<string>('');
   // Allow overriding the Clerk JWT template via env; default to 'admin'.
   const ADMIN_JWT_TEMPLATE = (import.meta.env.VITE_CLERK_JWT_TEMPLATE as string | undefined) || 'admin';
+  const userEmail = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
 
   React.useEffect(() => {
     if (!isLoaded) return; // wait for Clerk to load
     if (!isSignedIn) return; // SignedOut wrapper handles this
+    if (isE2eAuthBypassed()) {
+      setState('ok');
+      return;
+    }
 
     let cancelled = false;
-    const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
-    if (!email) return;
+    if (!userEmail) return;
 
     (async () => {
       setState('loading');
@@ -146,7 +159,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress, user?.emailAddresses?.[0]?.emailAddress, getToken]);
+  }, [ADMIN_JWT_TEMPLATE, getToken, isLoaded, isSignedIn, userEmail]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return <InfoCard title="Preparing admin session…" />;
@@ -191,6 +204,9 @@ function InfoCard({ title, body, align = 'center' }: InfoCardProps) {
 
 function BackendLogoutOnSignedOut() {
   React.useEffect(() => {
+    if (isE2eAuthBypassed()) {
+      return;
+    }
     void api.adminLogout().catch(() => {});
   }, []);
   return null;

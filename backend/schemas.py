@@ -3,6 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from config import ProlificMode
 from models import ProlificStudyStatus
 
 
@@ -17,8 +18,43 @@ class ProlificStudyConfig(BaseModel):
     )
 
 
+class PilotStudyCreate(BaseModel):
+    description: str
+    estimated_completion_time: int = Field(ge=1)
+    reward: int = Field(ge=1)
+    pilot_hours: int = Field(default=5, ge=1)
+    device_compatibility: list[Literal["desktop", "tablet", "mobile"]] = Field(
+        default_factory=lambda: ["desktop"]
+    )
+
+
+class ExperimentRoundCreate(BaseModel):
+    places: int = Field(ge=1)
+
+
+class RecommendationResponse(BaseModel):
+    avg_time_per_question_seconds: float
+    remaining_rating_actions: int
+    total_hours_remaining: float
+    recommended_places: int
+    is_complete: bool
+
+
+class ExperimentRoundResponse(BaseModel):
+    id: int
+    round_number: int
+    prolific_study_id: str
+    prolific_study_status: ProlificStudyStatus
+    places_requested: int
+    created_at: datetime
+    prolific_study_url: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
+    prolific_mode: ProlificMode
 
 
 # Experiment schemas
@@ -35,9 +71,6 @@ class ExperimentResponse(BaseModel):
     created_at: datetime
     num_ratings_per_question: int
     prolific_completion_url: Optional[str] = None
-    prolific_study_id: Optional[str] = None
-    prolific_study_status: Optional[ProlificStudyStatus] = None
-    prolific_study_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
 

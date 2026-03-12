@@ -21,6 +21,7 @@ services:
     env_file:
       - backend/.env
     environment:
+      APP_SECRET_KEY: "${APP_SECRET_KEY:-test-secret}"
       DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
       UV_PROJECT_ENVIRONMENT: /uv-env
@@ -40,6 +41,7 @@ services:
     env_file:
       - backend/.env
     environment:
+      APP_SECRET_KEY: "${APP_SECRET_KEY:-test-secret}"
       DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
       UV_PROJECT_ENVIRONMENT: /uv-env
@@ -61,10 +63,11 @@ services:
     env_file:
       - backend/.env
     environment:
+      APP_SECRET_KEY: "${APP_SECRET_KEY:-test-secret}"
       DATABASE__URL: postgresql://postgres:postgres@db:5432/human_rating_platform
       PYTHONPATH: /app/backend
       UV_PROJECT_ENVIRONMENT: /uv-env
-      ADMIN_AUTH_ENABLED: "${ADMIN_AUTH_ENABLED:-true}"
+      ADMIN_AUTH_ENABLED: "${ADMIN_AUTH_ENABLED:-false}"
     volumes:
       - ./:/app
       - uv_project_env:/uv-env
