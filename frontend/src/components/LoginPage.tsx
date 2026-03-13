@@ -1,9 +1,13 @@
 import React from 'react';
 import { useSignIn, useSignUp } from '@clerk/clerk-react';
+import { useLocation } from 'react-router-dom';
 
 type Stage = 'choose' | 'sign-in' | 'sign-up' | 'verify-email';
 
 export default function LoginPage() {
+  const location = useLocation();
+  // After auth, redirect back to where the user was trying to go (default /admin)
+  const redirectTo = location.pathname === '/' ? '/admin' : location.pathname;
   const { signIn, setActive, isLoaded } = useSignIn();
   const { signUp, setActive: setSignUpActive, isLoaded: signUpLoaded } = useSignUp();
   const [stage, setStage] = React.useState<Stage>('choose');
@@ -29,7 +33,7 @@ export default function LoginPage() {
       await signIn!.authenticateWithRedirect({
         strategy: 'oauth_google',
         redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/admin',
+        redirectUrlComplete: redirectTo,
       });
     } catch (err: any) {
       setError(err?.errors?.[0]?.longMessage || err?.message || 'Failed to start Google sign-in');
@@ -49,7 +53,7 @@ export default function LoginPage() {
       });
       if (result.status === 'complete') {
         await setActive!({ session: result.createdSessionId });
-        window.location.href = '/admin';
+        window.location.href = redirectTo;
       } else {
         setError('Sign-in incomplete. Please try again.');
       }
@@ -73,7 +77,7 @@ export default function LoginPage() {
       });
       if (result.status === 'complete') {
         await setSignUpActive!({ session: result.createdSessionId });
-        window.location.href = '/admin';
+        window.location.href = redirectTo;
       } else if (result.status === 'missing_requirements') {
         await signUp!.prepareEmailAddressVerification({ strategy: 'email_code' });
         setStage('verify-email');
@@ -99,7 +103,7 @@ export default function LoginPage() {
       });
       if (result.status === 'complete') {
         await setSignUpActive!({ session: result.createdSessionId });
-        window.location.href = '/admin';
+        window.location.href = redirectTo;
       } else {
         setError('Verification incomplete. Please try again.');
       }
