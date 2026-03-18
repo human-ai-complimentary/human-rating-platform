@@ -23,7 +23,7 @@ def _unique_name(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:10]}"
 
 
-PROLIFIC_BASE = "https://api.prolific.com/api/v1"
+PROLIFIC_BASE = get_settings().prolific.base_url
 FAKE_STUDY_ID = "65abc123def456"
 
 
