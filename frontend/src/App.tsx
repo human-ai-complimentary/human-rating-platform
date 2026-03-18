@@ -73,7 +73,6 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     if (!isLoaded) return;
     if (!isSignedIn) return;
     if (!email) return;
-    
     let cancelled = false;
 
     (async () => {
