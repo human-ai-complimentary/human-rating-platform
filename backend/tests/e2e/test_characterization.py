@@ -251,13 +251,15 @@ def test_start_session_rejects_after_end_session(client: TestClient):
 
     end_response = client.post(
         "/api/raters/end-session",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     )
     restart_response = client.post(
         "/api/raters/start",
         params={
             "experiment_id": experiment["id"],
             "PROLIFIC_PID": "PID_DONE",
+            "STUDY_ID": "STUDY_1",
+            "SESSION_ID": "SESSION_PID_DONE",
         },
     )
 
@@ -273,7 +275,7 @@ def test_next_question_returns_eligible_question(client: TestClient):
 
     response = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     )
 
     assert response.status_code == 200
@@ -289,7 +291,7 @@ def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     ).json()
 
     submit_payload = {
@@ -301,12 +303,12 @@ def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
 
     first = client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json=submit_payload,
     )
     duplicate = client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json=submit_payload,
     )
 
@@ -323,12 +325,12 @@ def test_submit_rating_rejects_invalid_confidence(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     ).json()
 
     response = client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json={
             "question_id": question["id"],
             "answer": "Yes",
@@ -350,11 +352,11 @@ def test_session_status_reflects_completed_questions(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     ).json()
     client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json={
             "question_id": question["id"],
             "answer": "No",
@@ -365,7 +367,7 @@ def test_session_status_reflects_completed_questions(client: TestClient):
 
     response = client.get(
         "/api/raters/session-status",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     )
 
     assert response.status_code == 200
@@ -387,11 +389,11 @@ def test_next_question_marks_expired_session_inactive(
 
     expired_response = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     )
     status_response = client.get(
         "/api/raters/session-status",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     )
 
     assert expired_response.status_code == 403
@@ -427,12 +429,12 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
     ).json()
 
     submit_response = client.post(
         "/api/raters/submit",
-        params={"rater_id": session_payload["rater_id"]},
+        headers={"X-Rater-Session": session_payload["rater_session_token"]},
         json={
             "question_id": question["id"],
             "answer": "Yes",
