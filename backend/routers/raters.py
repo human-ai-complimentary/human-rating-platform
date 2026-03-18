@@ -7,13 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_session
 from schemas import (
+    AssistanceAdvanceRequest,
+    AssistanceStartRequest,
+    AssistanceStepResponse,
     QuestionResponse,
     RaterStartResponse,
     RatingResponse,
     RatingSubmit,
     SessionStatusResponse,
 )
-from services import rater
+from services import assistance, rater
 
 router = APIRouter(prefix="/raters", tags=["raters"])
 
@@ -68,3 +71,27 @@ async def end_session(
     db: AsyncSession = Depends(get_session),
 ):
     return await rater.end_session(rater_id=rater_id, db=db)
+
+
+@router.post("/assistance/start", response_model=AssistanceStepResponse)
+async def start_assistance(
+    body: AssistanceStartRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    return await assistance.start_assistance(
+        rater_id=body.rater_id,
+        question_id=body.question_id,
+        db=db,
+    )
+
+
+@router.post("/assistance/advance", response_model=AssistanceStepResponse)
+async def advance_assistance(
+    body: AssistanceAdvanceRequest,
+    db: AsyncSession = Depends(get_session),
+):
+    return await assistance.advance_assistance(
+        session_id=body.session_id,
+        human_input=body.human_input,
+        db=db,
+    )

@@ -72,6 +72,14 @@ class Experiment(SQLModel, table=True):
         default=None,
         sa_column=Column(String(32), nullable=True),
     )
+    assistance_method: str = Field(
+        default="none",
+        sa_column=Column(String(64), nullable=False, server_default=text("'none'")),
+    )
+    assistance_params: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )  # JSON-encoded method-specific parameters
 
 
 class Question(SQLModel, table=True):
@@ -204,3 +212,57 @@ class Upload(SQLModel, table=True):
         ),
     )
     question_count: int = Field(sa_column=Column(Integer, nullable=False))
+
+
+class AssistanceSession(SQLModel, table=True):
+    """Tracks the state of a multi-turn assistance interaction for a rater/question pair."""
+
+    __tablename__ = "assistance_sessions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    rater_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("raters.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    experiment_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiments.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    question_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("questions.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    method_name: str = Field(sa_column=Column(String(64), nullable=False))
+    state: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+    )  # JSON-encoded method-specific state between turns
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+    )
+    is_complete: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+    )

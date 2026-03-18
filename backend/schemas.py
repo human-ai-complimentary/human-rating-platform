@@ -76,3 +76,21 @@ class RatingSubmit(BaseModel):
 class RatingResponse(BaseModel):
     id: int
     success: bool
+
+
+# Assistance schemas
+class AssistanceStartRequest(BaseModel):
+    rater_id: int
+    question_id: int
+
+
+class AssistanceAdvanceRequest(BaseModel):
+    session_id: int
+    human_input: str
+
+
+class AssistanceStepResponse(BaseModel):
+    session_id: int
+    type: str   # "none" | "display" | "ask_input" | "complete"
+    content: dict
+    is_terminal: bool
