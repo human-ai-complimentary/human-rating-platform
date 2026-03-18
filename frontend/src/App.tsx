@@ -65,20 +65,12 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   const [state, setState] = React.useState<'idle' | 'loading' | 'ok' | 'forbidden' | 'error'>('idle');
   const [message, setMessage] = React.useState<string>('');
 
-  const primaryEmail = user?.primaryEmailAddress?.emailAddress;
-  const fallbackEmail = user?.emailAddresses?.[0]?.emailAddress;
-  const email = primaryEmail || fallbackEmail;
-
-  // Derive a stable email value to avoid complex expressions in deps
   const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
 
   React.useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) return;
-    if (!email) return;
-
     let cancelled = false;
-    if (!email) return;
 
     (async () => {
       setState('loading');
