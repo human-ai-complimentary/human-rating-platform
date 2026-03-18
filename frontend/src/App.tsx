@@ -108,7 +108,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, email, getToken, ADMIN_JWT_TEMPLATE]);
+  }, [isLoaded, isSignedIn, email, getToken]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return (
