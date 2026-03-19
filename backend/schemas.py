@@ -95,6 +95,7 @@ class RaterStartResponse(BaseModel):
     session_end_time: datetime
     experiment_name: str
     completion_url: Optional[str] = None
+    rater_session_token: str
 
 
 class SessionStatusResponse(BaseModel):
