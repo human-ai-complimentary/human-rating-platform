@@ -6,11 +6,15 @@
 
 import type {
   Analytics,
+  ExperimentRound,
   Experiment,
   ExperimentCreate,
   ExperimentStats,
+  PilotStudyCreate,
+  PlatformStatus,
   Question,
   RatingSubmit,
+  RecommendationResponse,
   Session,
   Upload,
 } from './types';
@@ -62,7 +66,14 @@ const routes = {
     export: (id: number) => `/admin/experiments/${id}/export`,
     authLogin: '/admin/auth/login',
     authLogout: '/admin/auth/logout',
-    prolificPublish: (id: number) => `/admin/experiments/${id}/prolific/publish`,
+    platformStatus: '/admin/platform-status',
+    prolificPilot: (id: number) => `/admin/experiments/${id}/prolific/pilot`,
+    prolificRecommend: (id: number) => `/admin/experiments/${id}/prolific/recommend`,
+    prolificRounds: (id: number) => `/admin/experiments/${id}/prolific/rounds`,
+    prolificRoundPublish: (experimentId: number, roundId: number) =>
+      `/admin/experiments/${experimentId}/prolific/rounds/${roundId}/publish`,
+    prolificRoundClose: (experimentId: number, roundId: number) =>
+      `/admin/experiments/${experimentId}/prolific/rounds/${roundId}/close`,
   },
   rater: {
     start: '/raters/start',
@@ -301,8 +312,45 @@ export const api = {
     });
   },
 
-  async publishProlificStudy(experimentId: number): Promise<MessageResponse> {
-    return requestJson<MessageResponse>(routes.admin.prolificPublish(experimentId), {
+  async getPlatformStatus(): Promise<PlatformStatus> {
+    return requestJson<PlatformStatus>(routes.admin.platformStatus);
+  },
+
+  async runPilotStudy(experimentId: number, data: PilotStudyCreate): Promise<ExperimentRound> {
+    return requestJson<ExperimentRound>(routes.admin.prolificPilot(experimentId), {
+      method: 'POST',
+      json: data,
+    });
+  },
+
+  async getRecommendation(
+    experimentId: number,
+    { includePreview = false }: { includePreview?: boolean } = {}
+  ): Promise<RecommendationResponse> {
+    return requestJson<RecommendationResponse>(routes.admin.prolificRecommend(experimentId), {
+      query: { ...(includePreview ? { include_preview: 'true' } : {}) },
+    });
+  },
+
+  async runExperimentRound(experimentId: number, places: number): Promise<ExperimentRound> {
+    return requestJson<ExperimentRound>(routes.admin.prolificRounds(experimentId), {
+      method: 'POST',
+      json: { places },
+    });
+  },
+
+  async listExperimentRounds(experimentId: number): Promise<ExperimentRound[]> {
+    return requestJson<ExperimentRound[]>(routes.admin.prolificRounds(experimentId));
+  },
+
+  async publishExperimentRound(experimentId: number, roundId: number): Promise<MessageResponse> {
+    return requestJson<MessageResponse>(routes.admin.prolificRoundPublish(experimentId, roundId), {
+      method: 'POST',
+    });
+  },
+
+  async closeExperimentRound(experimentId: number, roundId: number): Promise<MessageResponse> {
+    return requestJson<MessageResponse>(routes.admin.prolificRoundClose(experimentId, roundId), {
       method: 'POST',
     });
   },

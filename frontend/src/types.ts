@@ -4,9 +4,6 @@ export interface Experiment {
   created_at: string;
   num_ratings_per_question: number;
   prolific_completion_url: string | null;
-  prolific_study_id: string | null;
-  prolific_study_status: string | null;
-  prolific_study_url: string | null;
   question_count: number;
   rating_count: number;
 }
@@ -93,8 +90,40 @@ export interface ProlificStudyConfig {
   device_compatibility: string[];
 }
 
+export interface PlatformStatus {
+  prolific_enabled: boolean;
+  prolific_mode: 'disabled' | 'real';
+}
+
 export interface ExperimentCreate {
   name: string;
   num_ratings_per_question: number;
-  prolific: ProlificStudyConfig;
+  prolific_completion_url: string;
+  prolific?: ProlificStudyConfig;
+}
+
+export interface ExperimentRound {
+  id: number;
+  round_number: number;
+  prolific_study_id: string;
+  prolific_study_status: string;
+  places_requested: number;
+  created_at: string;
+  prolific_study_url: string;
+}
+
+export interface PilotStudyCreate {
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  pilot_hours: number;
+  device_compatibility: string[];
+}
+
+export interface RecommendationResponse {
+  avg_time_per_question_seconds: number;
+  remaining_rating_actions: number;
+  total_hours_remaining: number;
+  recommended_places: number;
+  is_complete: boolean;
 }

@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
+import re
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 import respx
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import text
 
-from config import get_settings
+from config import ProlificMode, get_settings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -23,32 +26,14 @@ def _unique_name(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:10]}"
 
 
-PROLIFIC_BASE = get_settings().prolific.base_url
-FAKE_STUDY_ID = "65abc123def456"
-
-
-def _experiment_payload(name: str | None = None) -> dict:
-    return {
-        "name": name or _unique_name("experiment"),
-        "num_ratings_per_question": 2,
-        "prolific": {
-            "description": "Test study",
-            "estimated_completion_time": 10,
-            "reward": 500,
-            "total_available_places": 5,
-        },
-    }
-
-
-def _create_experiment(client: TestClient) -> dict:
-    """Create an experiment with mocked Prolific API.
-
-    Must be called within an active ``respx.mock`` context.
-    """
-    _mock_create_study()
+def _create_experiment(client: TestClient, *, completion_url: str | None = None) -> dict:
     response = client.post(
         "/api/admin/experiments",
-        json=_experiment_payload(),
+        json={
+            "name": _unique_name("experiment"),
+            "num_ratings_per_question": 2,
+            "prolific_completion_url": completion_url,
+        },
     )
     assert response.status_code == 200
     return response.json()
@@ -79,6 +64,10 @@ def _start_session(client: TestClient, experiment_id: int, prolific_pid: str = "
     )
     assert response.status_code == 200
     return response.json()
+
+
+def _rater_headers(session_payload: dict) -> dict[str, str]:
+    return {"X-Rater-Session": session_payload["rater_session_token"]}
 
 
 def _seed_export_dataset(sync_engine, experiment_id: int, row_count: int) -> None:
@@ -175,7 +164,6 @@ def test_list_experiments_returns_empty_list_initially(client: TestClient):
     assert response.json() == []
 
 
-@respx.mock
 def test_create_experiment_then_list_contains_it(client: TestClient):
     created = _create_experiment(client)
 
@@ -189,7 +177,6 @@ def test_create_experiment_then_list_contains_it(client: TestClient):
     assert items[0]["rating_count"] == 0
 
 
-@respx.mock
 def test_upload_questions_records_upload_and_stats(client: TestClient):
     experiment = _create_experiment(client)
     experiment_id = experiment["id"]
@@ -209,7 +196,6 @@ def test_upload_questions_records_upload_and_stats(client: TestClient):
     assert stats_payload["total_ratings"] == 0
 
 
-@respx.mock
 def test_upload_rejects_non_csv_file(client: TestClient):
     experiment = _create_experiment(client)
 
@@ -222,18 +208,19 @@ def test_upload_rejects_non_csv_file(client: TestClient):
     assert response.json()["detail"] == "File must be a CSV file"
 
 
-@respx.mock
 def test_start_session_creates_new_rater_session(client: TestClient):
-    experiment = _create_experiment(client)
+    experiment = _create_experiment(
+        client,
+        completion_url="https://app.prolific.com/submissions/complete?cc=ABCD1234",
+    )
 
     payload = _start_session(client, experiment["id"], prolific_pid="PID_1")
 
     assert payload["rater_id"] > 0
     assert payload["experiment_name"] == experiment["name"]
-    assert payload["completion_url"] is not None
+    assert payload["completion_url"].startswith("https://app.prolific.com/")
 
 
-@respx.mock
 def test_start_session_twice_resumes_same_active_session(client: TestClient):
     experiment = _create_experiment(client)
 
@@ -244,14 +231,13 @@ def test_start_session_twice_resumes_same_active_session(client: TestClient):
     assert first["session_start"] == second["session_start"]
 
 
-@respx.mock
 def test_start_session_rejects_after_end_session(client: TestClient):
     experiment = _create_experiment(client)
     session_payload = _start_session(client, experiment["id"], prolific_pid="PID_DONE")
 
     end_response = client.post(
         "/api/raters/end-session",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     )
     restart_response = client.post(
         "/api/raters/start",
@@ -259,7 +245,7 @@ def test_start_session_rejects_after_end_session(client: TestClient):
             "experiment_id": experiment["id"],
             "PROLIFIC_PID": "PID_DONE",
             "STUDY_ID": "STUDY_1",
-            "SESSION_ID": "SESSION_PID_DONE",
+            "SESSION_ID": "SESSION_PID_DONE_RESTART",
         },
     )
 
@@ -267,7 +253,6 @@ def test_start_session_rejects_after_end_session(client: TestClient):
     assert restart_response.status_code == 403
 
 
-@respx.mock
 def test_next_question_returns_eligible_question(client: TestClient):
     experiment = _create_experiment(client)
     _upload_questions(client, experiment["id"])
@@ -275,7 +260,7 @@ def test_next_question_returns_eligible_question(client: TestClient):
 
     response = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     )
 
     assert response.status_code == 200
@@ -283,7 +268,6 @@ def test_next_question_returns_eligible_question(client: TestClient):
     assert payload["question_id"] in {"q1", "q2"}
 
 
-@respx.mock
 def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
     experiment = _create_experiment(client)
     _upload_questions(client, experiment["id"])
@@ -291,7 +275,7 @@ def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     ).json()
 
     submit_payload = {
@@ -303,12 +287,12 @@ def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
 
     first = client.post(
         "/api/raters/submit",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
         json=submit_payload,
     )
     duplicate = client.post(
         "/api/raters/submit",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
         json=submit_payload,
     )
 
@@ -317,7 +301,6 @@ def test_submit_rating_success_then_duplicate_rejected(client: TestClient):
     assert duplicate.status_code == 400
 
 
-@respx.mock
 def test_submit_rating_rejects_invalid_confidence(client: TestClient):
     experiment = _create_experiment(client)
     _upload_questions(client, experiment["id"])
@@ -325,12 +308,12 @@ def test_submit_rating_rejects_invalid_confidence(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     ).json()
 
     response = client.post(
         "/api/raters/submit",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
         json={
             "question_id": question["id"],
             "answer": "Yes",
@@ -344,7 +327,6 @@ def test_submit_rating_rejects_invalid_confidence(client: TestClient):
     assert any(error["loc"][-1] == "confidence" for error in detail)
 
 
-@respx.mock
 def test_session_status_reflects_completed_questions(client: TestClient):
     experiment = _create_experiment(client)
     _upload_questions(client, experiment["id"])
@@ -352,11 +334,11 @@ def test_session_status_reflects_completed_questions(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     ).json()
     client.post(
         "/api/raters/submit",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
         json={
             "question_id": question["id"],
             "answer": "No",
@@ -367,7 +349,7 @@ def test_session_status_reflects_completed_questions(client: TestClient):
 
     response = client.get(
         "/api/raters/session-status",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     )
 
     assert response.status_code == 200
@@ -376,7 +358,6 @@ def test_session_status_reflects_completed_questions(client: TestClient):
     assert payload["time_remaining_seconds"] > 0
 
 
-@respx.mock
 def test_next_question_marks_expired_session_inactive(
     client: TestClient,
     backdate_rater_session,
@@ -389,11 +370,11 @@ def test_next_question_marks_expired_session_inactive(
 
     expired_response = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     )
     status_response = client.get(
         "/api/raters/session-status",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     )
 
     assert expired_response.status_code == 403
@@ -402,7 +383,6 @@ def test_next_question_marks_expired_session_inactive(
     assert status_response.json()["is_active"] is False
 
 
-@respx.mock
 def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync_engine):
     settings = get_settings()
     row_count = settings.testing.export_seed_row_count
@@ -421,7 +401,6 @@ def test_export_ratings_streams_large_dataset_in_chunks(client: TestClient, sync
     assert len(parsed_rows) == row_count + 1
 
 
-@respx.mock
 def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
     experiment = _create_experiment(client)
     _upload_questions(client, experiment["id"])
@@ -429,12 +408,12 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
     question = client.get(
         "/api/raters/next-question",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
     ).json()
 
     submit_response = client.post(
         "/api/raters/submit",
-        headers={"X-Rater-Session": session_payload["rater_session_token"]},
+        headers=_rater_headers(session_payload),
         json={
             "question_id": question["id"],
             "answer": "Yes",
@@ -459,12 +438,30 @@ def test_analytics_endpoint_returns_expected_payload_shape(client: TestClient):
 
 
 def test_migration_runner_current_and_history_commands_succeed():
-    revision_ids = sorted(
-        path.name.split("_")[0]
-        for path in (BACKEND_DIR / "alembic" / "versions").glob("*.py")
-        if path.name != "__init__.py"
-    )
-    assert revision_ids
+    revision_pattern = re.compile(r'^revision:\s*str\s*=\s*"([^"]+)"', re.MULTILINE)
+    down_pattern = re.compile(r"^down_revision:\s*.*=\s*(.+)$", re.MULTILINE)
+    revisions: set[str] = set()
+    down_revisions: set[str] = set()
+
+    for path in (BACKEND_DIR / "alembic" / "versions").glob("*.py"):
+        if path.name == "__init__.py":
+            continue
+        content = path.read_text()
+        revision_match = revision_pattern.search(content)
+        assert revision_match is not None
+        revisions.add(revision_match.group(1))
+
+        down_match = down_pattern.search(content)
+        assert down_match is not None
+        down_raw = down_match.group(1).strip()
+        if down_raw == "None":
+            continue
+        for revision in re.findall(r'"([^"]+)"', down_raw):
+            down_revisions.add(revision)
+
+    assert revisions
+    head_revisions = sorted(revisions - down_revisions)
+    assert head_revisions
 
     current = subprocess.run(
         ["sh", "scripts/migrate.sh", "current"],
@@ -486,8 +483,9 @@ def test_migration_runner_current_and_history_commands_succeed():
 
     current_output = f"{current.stdout}\n{current.stderr}"
     history_output = f"{history.stdout}\n{history.stderr}"
-    assert revision_ids[-1] in current_output
-    for revision_id in revision_ids:
+    for revision_id in head_revisions:
+        assert revision_id in current_output
+    for revision_id in sorted(revisions):
         assert revision_id in history_output
 
 
@@ -511,99 +509,526 @@ def test_app_creation_succeeds_with_default_env():
 # These use respx to mock outbound httpx calls to the Prolific API, verifying
 # the full path: TestClient → FastAPI → service → Prolific client → mock.
 
+PROLIFIC_BASE = "https://api.prolific.com/api/v1"
+PROLIFIC_STUDY_ID = "65abc123def456"
 
-def _mock_create_study(*, status: int = 200) -> respx.Route:
-    body = {"id": FAKE_STUDY_ID, "status": "UNPUBLISHED"} if status == 200 else {}
+
+@pytest.fixture()
+def enable_prolific():
+    """Temporarily enable Prolific by setting an API token on the cached settings."""
+    settings = get_settings()
+    original_mode = settings.prolific.mode
+    original = settings.prolific.api_token
+    settings.prolific.mode = ProlificMode.REAL
+    settings.prolific.api_token = "test-token"
+    yield settings
+    settings.prolific.mode = original_mode
+    settings.prolific.api_token = original
+
+
+def _prolific_experiment_payload() -> dict:
+    return {
+        "name": _unique_name("prolific-exp"),
+        "num_ratings_per_question": 2,
+        "prolific_completion_url": None,
+    }
+
+
+def _pilot_payload() -> dict:
+    return {
+        "description": "Test study",
+        "estimated_completion_time": 10,
+        "reward": 500,
+        "pilot_hours": 5,
+        "device_compatibility": ["desktop"],
+    }
+
+
+def _mock_create_study(*, status: int = 200, study_id: str = PROLIFIC_STUDY_ID) -> respx.Route:
+    body = {"id": study_id, "status": "UNPUBLISHED"} if status == 200 else {}
     return respx.post(f"{PROLIFIC_BASE}/studies/").mock(return_value=Response(status, json=body))
 
 
-def _mock_publish_study() -> respx.Route:
-    return respx.post(f"{PROLIFIC_BASE}/studies/{FAKE_STUDY_ID}/transition/").mock(
-        return_value=Response(200, json={"id": FAKE_STUDY_ID, "status": "ACTIVE"})
+def _mock_publish_study(*, study_id: str = PROLIFIC_STUDY_ID) -> respx.Route:
+    return respx.post(f"{PROLIFIC_BASE}/studies/{study_id}/transition/").mock(
+        return_value=Response(200, json={"id": study_id, "status": "ACTIVE"})
     )
 
 
-def _mock_delete_study(*, status: int = 204) -> respx.Route:
+def _mock_close_study(
+    *,
+    study_id: str = PROLIFIC_STUDY_ID,
+    closed_status: str = "AWAITING_REVIEW",
+) -> respx.Route:
+    return respx.post(f"{PROLIFIC_BASE}/studies/{study_id}/transition/").mock(
+        return_value=Response(200, json={"id": study_id, "status": closed_status})
+    )
+
+
+def _mock_delete_study(*, study_id: str = PROLIFIC_STUDY_ID, status: int = 204) -> respx.Route:
     body = {} if status == 204 else {"error": "fail"}
-    return respx.delete(f"{PROLIFIC_BASE}/studies/{FAKE_STUDY_ID}/").mock(
+    return respx.delete(f"{PROLIFIC_BASE}/studies/{study_id}/").mock(
         return_value=Response(status, json=body)
     )
 
 
+def _mock_get_study(
+    *,
+    study_id: str = PROLIFIC_STUDY_ID,
+    study_status: str = "ACTIVE",
+    status: int = 200,
+) -> respx.Route:
+    body = {"id": study_id, "status": study_status} if status == 200 else {"error": "fail"}
+    return respx.get(f"{PROLIFIC_BASE}/studies/{study_id}/").mock(
+        return_value=Response(status, json=body)
+    )
+
+
+def _create_prolific_experiment(client: TestClient) -> tuple[dict, dict]:
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
+    _mock_create_study()
+    pilot_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
+    assert pilot_resp.status_code == 200, pilot_resp.text
+    return experiment, pilot_resp.json()
+
+
 @respx.mock
-def test_prolific_create_stores_study_id(client: TestClient):
-    data = _create_experiment(client)
+def test_prolific_create_stores_study_id(client: TestClient, enable_prolific):
+    experiment, pilot = _create_prolific_experiment(client)
 
-    assert data["prolific_study_id"] == FAKE_STUDY_ID
-    assert data["prolific_study_status"] == "UNPUBLISHED"
-    assert data["prolific_study_url"] is not None
-    assert FAKE_STUDY_ID in data["prolific_study_url"]
-    assert data["prolific_completion_url"] is not None
+    assert pilot["prolific_study_id"] == PROLIFIC_STUDY_ID
+    assert pilot["prolific_study_status"] == "UNPUBLISHED"
+    assert pilot["prolific_study_url"] is not None
+    assert PROLIFIC_STUDY_ID in pilot["prolific_study_url"]
+
+    experiments = client.get("/api/admin/experiments").json()
+    stored = next(item for item in experiments if item["id"] == experiment["id"])
+    assert stored["prolific_completion_url"] is not None
+    rounds = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds").json()
+    assert [round_["round_number"] for round_ in rounds] == [0]
 
 
 @respx.mock
-def test_prolific_create_failure_returns_502(client: TestClient):
+def test_prolific_round_names_include_round_label(client: TestClient, enable_prolific):
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
+    pilot_route = _mock_create_study(study_id="PILOT_STUDY")
+    pilot_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
+    assert pilot_resp.status_code == 200, pilot_resp.text
+    assert pilot_route.called
+    pilot_payload = json.loads(pilot_route.calls[-1].request.content.decode())
+    assert pilot_payload["name"] == f"{experiment['name']} - Pilot"
+
+    _mock_publish_study(study_id="PILOT_STUDY")
+    publish_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds/1/publish"
+    )
+    assert publish_resp.status_code == 200
+
+    _mock_close_study(study_id="PILOT_STUDY")
+    close_resp = client.post(f"/api/admin/experiments/{experiment['id']}/prolific/rounds/1/close")
+    assert close_resp.status_code == 200
+
+    round_route = _mock_create_study(study_id="ROUND_1_STUDY")
+    round_resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds",
+        json={"places": 4},
+    )
+    assert round_resp.status_code == 200, round_resp.text
+    assert round_route.called
+    round_payload = json.loads(round_route.calls[-1].request.content.decode())
+    assert round_payload["name"] == f"{experiment['name']} - Round 1"
+
+
+@respx.mock
+def test_prolific_create_failure_returns_502(client: TestClient, enable_prolific):
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
     _mock_create_study(status=500)
 
-    resp = client.post("/api/admin/experiments", json=_experiment_payload())
+    resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
 
     assert resp.status_code == 502
 
-    # Verify experiment was NOT persisted (rollback)
+    # Experiment remains, but no rounds were created and no study is linked.
     experiments = client.get("/api/admin/experiments").json()
-    assert len(experiments) == 0
+    stored = next(item for item in experiments if item["id"] == experiment["id"])
+    assert stored["prolific_completion_url"] is None
+    rounds = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds").json()
+    assert rounds == []
 
 
 @respx.mock
-def test_prolific_publish_updates_status(client: TestClient):
-    data = _create_experiment(client)
-    experiment_id = data["id"]
+def test_prolific_second_pilot_is_rejected(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
 
-    route = _mock_publish_study()
+    resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
 
-    resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/publish")
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "A pilot study has already been run for this experiment"
+
+
+@respx.mock
+def test_prolific_recommendation_returns_zeros_before_ratings(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+
+    resp = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/recommend")
 
     assert resp.status_code == 200
-    assert resp.json()["status"] == "ACTIVE"
-    assert route.called
+    assert resp.json() == {
+        "avg_time_per_question_seconds": 0.0,
+        "remaining_rating_actions": 0,
+        "total_hours_remaining": 0.0,
+        "recommended_places": 0,
+        "is_complete": False,
+    }
 
 
 @respx.mock
-def test_prolific_delete_calls_prolific_api(client: TestClient):
-    data = _create_experiment(client)
-    experiment_id = data["id"]
+def test_prolific_recommendation_updates_after_pilot_rating(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    _upload_questions(client, experiment["id"])
+    session_payload = _start_session(client, experiment["id"], prolific_pid="PID_PILOT_RATER")
 
-    route = _mock_delete_study()
+    question = client.get(
+        "/api/raters/next-question",
+        headers=_rater_headers(session_payload),
+    ).json()
+
+    started_at = datetime.now(UTC) - timedelta(seconds=45)
+    submit_resp = client.post(
+        "/api/raters/submit",
+        headers=_rater_headers(session_payload),
+        json={
+            "question_id": question["id"],
+            "answer": "Yes",
+            "confidence": 4,
+            "time_started": started_at.isoformat(),
+        },
+    )
+    assert submit_resp.status_code == 200
+
+    resp = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/recommend")
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["avg_time_per_question_seconds"] > 0
+    assert payload["remaining_rating_actions"] == 3
+    assert payload["total_hours_remaining"] > 0
+    assert payload["recommended_places"] == 1
+    assert payload["is_complete"] is False
+
+
+@respx.mock
+def test_prolific_recommendation_honors_include_preview(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    _upload_questions(client, experiment["id"])
+
+    response = client.post(
+        "/api/raters/start",
+        params={
+            "experiment_id": experiment["id"],
+            "PROLIFIC_PID": "PID_PREVIEW",
+            "STUDY_ID": "STUDY_PREVIEW",
+            "SESSION_ID": "SESSION_PREVIEW",
+            "preview": "true",
+        },
+    )
+    assert response.status_code == 200
+    session_payload = response.json()
+
+    question = client.get(
+        "/api/raters/next-question",
+        headers=_rater_headers(session_payload),
+    ).json()
+
+    submit_resp = client.post(
+        "/api/raters/submit",
+        headers=_rater_headers(session_payload),
+        json={
+            "question_id": question["id"],
+            "answer": "Yes",
+            "confidence": 4,
+            "time_started": (datetime.now(UTC) - timedelta(seconds=30)).isoformat(),
+        },
+    )
+    assert submit_resp.status_code == 200
+
+    default_resp = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/recommend")
+    preview_resp = client.get(
+        f"/api/admin/experiments/{experiment['id']}/prolific/recommend?include_preview=true"
+    )
+
+    assert default_resp.status_code == 200
+    assert default_resp.json()["avg_time_per_question_seconds"] == 0.0
+    assert preview_resp.status_code == 200
+    assert preview_resp.json()["avg_time_per_question_seconds"] > 0
+
+
+@respx.mock
+def test_prolific_round_requires_pilot(client: TestClient, enable_prolific):
+    experiment = _create_experiment(client)
+
+    resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/rounds",
+        json={"places": 4},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Run a pilot study first before launching a main round"
+
+
+@respx.mock
+def test_prolific_round_creation_requires_closing_previous_round(
+    client: TestClient,
+    enable_prolific,
+):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    before_publish = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+    assert before_publish.status_code == 400
+    assert (
+        before_publish.json()["detail"] == "Close the previous round before launching a new round"
+    )
+
+    _mock_publish_study()
+    publish_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+    assert publish_resp.status_code == 200
+
+    while_active = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+    assert while_active.status_code == 400
+    assert while_active.json()["detail"] == "Close the previous round before launching a new round"
+
+    _mock_close_study()
+    close_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close")
+    assert close_resp.status_code == 200
+    assert close_resp.json()["status"] == "AWAITING_REVIEW"
+
+    _mock_create_study(study_id="ROUND_STUDY")
+    first_round = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+    assert first_round.status_code == 200, first_round.text
+    assert first_round.json()["round_number"] == 1
+
+
+@respx.mock
+def test_prolific_round_history_and_completion_url_progression(
+    client: TestClient,
+    enable_prolific,
+):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+    initial_experiment = next(
+        item for item in client.get("/api/admin/experiments").json() if item["id"] == experiment_id
+    )
+    initial_completion_url = initial_experiment["prolific_completion_url"]
+
+    _mock_publish_study()
+    publish_pilot = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+    assert publish_pilot.status_code == 200
+
+    _mock_close_study()
+    close_pilot = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close")
+    assert close_pilot.status_code == 200
+
+    _mock_create_study(study_id="ROUND_STUDY_1")
+    round_one = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+    assert round_one.status_code == 200
+
+    _mock_publish_study(study_id="ROUND_STUDY_1")
+    publish_round_one = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/2/publish"
+    )
+    assert publish_round_one.status_code == 200
+
+    _mock_close_study(study_id="ROUND_STUDY_1", closed_status="COMPLETED")
+    close_round_one = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/2/close")
+    assert close_round_one.status_code == 200
+
+    _mock_create_study(study_id="ROUND_STUDY_2")
+    round_two = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 2},
+    )
+    assert round_two.status_code == 200
+
+    rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
+    assert [round_["round_number"] for round_ in rounds] == [0, 1, 2]
+    assert [round_["places_requested"] for round_ in rounds] == [5, 4, 2]
+
+    stored = next(
+        item for item in client.get("/api/admin/experiments").json() if item["id"] == experiment_id
+    )
+    assert stored["prolific_completion_url"] == initial_completion_url
+
+
+@respx.mock
+def test_prolific_round_publish_updates_status(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    route = _mock_publish_study()
+    resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+
+    assert resp.status_code == 200
+    assert route.called
+    rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
+    assert rounds[0]["prolific_study_status"] == "ACTIVE"
+
+
+@respx.mock
+def test_prolific_round_list_refreshes_transient_status_from_prolific(
+    client: TestClient,
+    enable_prolific,
+):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    respx.post(f"{PROLIFIC_BASE}/studies/{PROLIFIC_STUDY_ID}/transition/").mock(
+        return_value=Response(200, json={"id": PROLIFIC_STUDY_ID, "status": "PUBLISHING"})
+    )
+    publish_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+    assert publish_resp.status_code == 200
+    assert publish_resp.json()["status"] == "PUBLISHING"
+
+    route = _mock_get_study(study_status="ACTIVE")
+    rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
+
+    assert route.called
+    assert rounds[0]["prolific_study_status"] == "ACTIVE"
+
+
+@respx.mock
+def test_prolific_round_close_updates_status(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_publish_study()
+    publish_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+    assert publish_resp.status_code == 200
+
+    route = _mock_close_study(closed_status="AWAITING_REVIEW")
+    close_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close")
+
+    assert close_resp.status_code == 200
+    assert close_resp.json()["status"] == "AWAITING_REVIEW"
+    assert route.called
+
+    rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
+    assert rounds[0]["prolific_study_status"] == "AWAITING_REVIEW"
+
+
+@respx.mock
+def test_prolific_delete_calls_prolific_api_for_all_rounds(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_publish_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish").status_code
+        == 200
+    )
+    _mock_close_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close").status_code
+        == 200
+    )
+    _mock_create_study(study_id="ROUND_STUDY_DELETE")
+    assert (
+        client.post(
+            f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+            json={"places": 4},
+        ).status_code
+        == 200
+    )
+
+    pilot_delete = _mock_delete_study(study_id=PROLIFIC_STUDY_ID)
+    round_delete = _mock_delete_study(study_id="ROUND_STUDY_DELETE")
 
     resp = client.delete(f"/api/admin/experiments/{experiment_id}")
 
     assert resp.status_code == 200
-    assert route.called
+    assert pilot_delete.called
+    assert round_delete.called
 
     experiments = client.get("/api/admin/experiments").json()
     assert all(e["id"] != experiment_id for e in experiments)
 
 
 @respx.mock
-def test_prolific_delete_succeeds_when_api_fails(client: TestClient):
-    data = _create_experiment(client)
-    experiment_id = data["id"]
+def test_prolific_delete_succeeds_when_api_fails(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     _mock_delete_study(status=500)
 
     resp = client.delete(f"/api/admin/experiments/{experiment_id}")
 
-    # Local delete succeeds even when Prolific API fails
+    # Local delete succeeds even when Prolific API fails.
     assert resp.status_code == 200
 
 
 @respx.mock
-def test_prolific_delete_handles_404(client: TestClient):
-    data = _create_experiment(client)
-    experiment_id = data["id"]
+def test_prolific_delete_handles_404(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
 
     _mock_delete_study(status=404)
 
     resp = client.delete(f"/api/admin/experiments/{experiment_id}")
 
     assert resp.status_code == 200
+
+
+def test_platform_status_reflects_prolific_enabled(client: TestClient, enable_prolific):
+    resp = client.get("/api/admin/platform-status")
+    assert resp.status_code == 200
+    assert resp.json()["prolific_enabled"] is True
+    assert resp.json()["prolific_mode"] == "real"
+
+
+def test_platform_status_disabled_by_default(client: TestClient):
+    settings = get_settings()
+    original_mode = settings.prolific.mode
+    original = settings.prolific.api_token
+    settings.prolific.mode = ProlificMode.DISABLED
+    settings.prolific.api_token = ""
+    try:
+        resp = client.get("/api/admin/platform-status")
+        assert resp.status_code == 200
+        assert resp.json()["prolific_enabled"] is False
+        assert resp.json()["prolific_mode"] == "disabled"
+    finally:
+        settings.prolific.mode = original_mode
+        settings.prolific.api_token = original

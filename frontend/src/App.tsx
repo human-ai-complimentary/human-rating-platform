@@ -1,11 +1,19 @@
 import React from 'react';
+import { AuthenticateWithRedirectCallback } from '@clerk/clerk-react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { SignedIn, SignedOut, useUser, useAuth, UserButton, AuthenticateWithRedirectCallback } from '@clerk/clerk-react';
 import RaterView from './components/RaterView';
 import AdminView from './components/AdminView';
 import ExperimentDetailPage from './components/ExperimentDetailPage';
 import LoginPage from './components/LoginPage';
 import { api } from './api';
+import {
+  isE2eAuthBypassed,
+  SignedIn,
+  SignedOut,
+  useAuth,
+  useUser,
+  UserButton,
+} from './auth';
 
 function App() {
   return (
@@ -64,15 +72,16 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
   const { getToken } = useAuth();
   const [state, setState] = React.useState<'idle' | 'loading' | 'ok' | 'forbidden' | 'error'>('idle');
   const [message, setMessage] = React.useState<string>('');
-
-  const primaryEmail = user?.primaryEmailAddress?.emailAddress;
-  const fallbackEmail = user?.emailAddresses?.[0]?.emailAddress;
-  const email = primaryEmail || fallbackEmail;
+  const email = user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress;
 
   React.useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) return;
     if (!email) return;
+    if (isE2eAuthBypassed()) {
+      setState('ok');
+      return;
+    }
 
     let cancelled = false;
 
@@ -112,7 +121,7 @@ function AdminPage({ children }: { children?: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, isSignedIn, email, getToken]);
+  }, [ADMIN_JWT_TEMPLATE, isLoaded, isSignedIn, email, getToken]);
 
   if (!isLoaded || state === 'loading' || state === 'idle') {
     return (
@@ -148,14 +157,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', padding: 12 }}>
-        <UserButton
-          afterSignOutUrl="/"
-          appearance={{
-            elements: {
-              userButtonPopoverFooter: { display: 'none' },
-            },
-          }}
-        />
+        <UserButton afterSignOutUrl="/" />
       </div>
       <SignedOut>
         <BackendLogoutOnSignedOut />
@@ -167,6 +169,9 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
 function BackendLogoutOnSignedOut() {
   React.useEffect(() => {
+    if (isE2eAuthBypassed()) {
+      return;
+    }
     void api.adminLogout().catch(() => {});
   }, []);
   return null;
@@ -192,5 +197,4 @@ function InfoCard({ title, body, align = 'center' }: InfoCardProps) {
     </div>
   );
 }
-
 export default App;
