@@ -390,9 +390,9 @@ export const api = {
 
   // Drops to request() instead of requestJson() because the backend returns
   // 403 for expired sessions — we need to check status before JSON parsing.
-  async getNextQuestion(raterId: number): Promise<Question | null> {
+  async getNextQuestion(sessionToken: string): Promise<Question | null> {
     const { url, response } = await request(routes.rater.nextQuestion, {
-      query: { rater_id: raterId },
+      headers: { 'X-Rater-Session': sessionToken },
     });
 
     if (response.status === 403) {
@@ -406,24 +406,24 @@ export const api = {
     return parseJson<Question | null>(response, url);
   },
 
-  async submitRating(raterId: number, data: RatingSubmit): Promise<SubmitRatingResponse> {
+  async submitRating(sessionToken: string, data: RatingSubmit): Promise<SubmitRatingResponse> {
     return requestJson<SubmitRatingResponse>(routes.rater.submit, {
       method: 'POST',
-      query: { rater_id: raterId },
+      headers: { 'X-Rater-Session': sessionToken },
       json: data,
     });
   },
 
-  async getSessionStatus(raterId: number): Promise<SessionStatusResponse> {
+  async getSessionStatus(sessionToken: string): Promise<SessionStatusResponse> {
     return requestJson<SessionStatusResponse>(routes.rater.sessionStatus, {
-      query: { rater_id: raterId },
+      headers: { 'X-Rater-Session': sessionToken },
     });
   },
 
-  async endSession(raterId: number): Promise<MessageResponse> {
+  async endSession(sessionToken: string): Promise<MessageResponse> {
     return requestJson<MessageResponse>(routes.rater.endSession, {
       method: 'POST',
-      query: { rater_id: raterId },
+      headers: { 'X-Rater-Session': sessionToken },
     });
   },
 };
