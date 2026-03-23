@@ -74,10 +74,12 @@ What is expected to evolve:
 from __future__ import annotations
 
 from .base import AssistanceMethod
+from .methods.human_as_a_tool import HumanAsAToolMethod
 from .methods.none import NoAssistance
 
 _REGISTRY: dict[str, type[AssistanceMethod]] = {
     "none": NoAssistance,
+    "human_as_a_tool": HumanAsAToolMethod,
 }
 
 

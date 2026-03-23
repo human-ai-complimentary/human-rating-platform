@@ -70,6 +70,37 @@ async def start_session(
     )
 
     if existing_rater:
+        if existing_rater.is_preview:
+            # Reset preview rater so they can run through the flow again from scratch
+            for rating in (
+                await db.execute(select(Rating).where(Rating.rater_id == existing_rater.id))
+            ).scalars():
+                await db.delete(rating)
+            for session in (
+                await db.execute(
+                    select(AssistanceSession).where(
+                        AssistanceSession.rater_id == existing_rater.id
+                    )
+                )
+            ).scalars():
+                await db.delete(session)
+            existing_rater.is_active = True
+            existing_rater.session_start = datetime.now(UTC)
+            existing_rater.session_end = None
+            await db.commit()
+            await db.refresh(existing_rater)
+            logger.info("Preview rater reset: rater_id=%s", existing_rater.id)
+            token = issue_rater_session_token(
+                settings=settings, rater_id=existing_rater.id, experiment_id=experiment_id
+            )
+            return build_rater_start_response(
+                rater_id=existing_rater.id,
+                session_start=existing_rater.session_start,
+                experiment_name=experiment.name,
+                completion_url=experiment.prolific_completion_url,
+                rater_session_token=token,
+                assistance_method=experiment.assistance_method,
+            )
         validate_existing_rater_can_resume(existing_rater)
         token = issue_rater_session_token(
             settings=settings, rater_id=existing_rater.id, experiment_id=experiment_id
@@ -80,6 +111,7 @@ async def start_session(
             experiment_name=experiment.name,
             completion_url=experiment.prolific_completion_url,
             rater_session_token=token,
+            assistance_method=experiment.assistance_method,
         )
 
     rater = Rater(
@@ -112,6 +144,7 @@ async def start_session(
         experiment_name=experiment.name,
         completion_url=experiment.prolific_completion_url,
         rater_session_token=token,
+        assistance_method=experiment.assistance_method,
     )
 
 

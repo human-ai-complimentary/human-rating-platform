@@ -6,6 +6,7 @@ from .experiments import (
     delete_experiment,
     get_experiment_stats,
     list_experiments,
+    update_experiment,
 )
 from .exports import build_export_filename, stream_export_csv_chunks
 from .rounds import (
@@ -33,5 +34,6 @@ __all__ = [
     "run_experiment_round",
     "run_pilot_study",
     "stream_export_csv_chunks",
+    "update_experiment",
     "upload_questions_csv",
 ]

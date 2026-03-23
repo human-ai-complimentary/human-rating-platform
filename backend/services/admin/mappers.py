@@ -22,6 +22,7 @@ def build_experiment_response(
         prolific_completion_url=experiment.prolific_completion_url,
         question_count=question_count,
         rating_count=rating_count,
+        assistance_method=experiment.assistance_method,
     )
 
 

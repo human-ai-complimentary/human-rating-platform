@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
 from models import Experiment, ExperimentRound, Question, Rating, Rater
-from schemas import ExperimentCreate, ExperimentResponse
+from schemas import ExperimentCreate, ExperimentResponse, ExperimentUpdate
 from .mappers import build_experiment_response
 from fastapi import HTTPException
 from .prolific import delete_study
@@ -92,6 +92,25 @@ async def list_experiments(
         )
         for experiment, question_count, rating_count in rows
     ]
+
+
+async def update_experiment(
+    experiment_id: int,
+    payload: ExperimentUpdate,
+    db: AsyncSession,
+) -> ExperimentResponse:
+    try:
+        get_method(payload.assistance_method)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    experiment = await fetch_experiment_or_404(experiment_id, db)
+    experiment.assistance_method = payload.assistance_method
+    await db.commit()
+    await db.refresh(experiment)
+
+    question_count = await fetch_total_questions_for_experiment(experiment_id, db)
+    return build_experiment_response(experiment, question_count=question_count, rating_count=0)
 
 
 async def delete_experiment(

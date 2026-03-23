@@ -27,6 +27,7 @@ def build_rater_start_response(
     experiment_name: str,
     completion_url: str | None,
     rater_session_token: str,
+    assistance_method: str = "none",
 ) -> RaterStartResponse:
     return RaterStartResponse(
         rater_id=rater_id,
@@ -35,4 +36,5 @@ def build_rater_start_response(
         experiment_name=experiment_name,
         completion_url=completion_url,
         rater_session_token=rater_session_token,
+        assistance_method=assistance_method,
     )

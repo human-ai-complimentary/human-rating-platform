@@ -88,7 +88,7 @@ async def start_assistance(
         )
 
     existing = await _fetch_existing_session(rater_id, question_id, db)
-    if existing:
+    if existing and existing.step_type != StepType.NONE:
         step = InteractionStep(
             type=StepType(existing.step_type),
             payload=_load_json(existing.payload),
@@ -96,6 +96,10 @@ async def start_assistance(
             is_terminal=existing.is_complete,
         )
         return _step_to_response(existing.id, step)
+
+    if existing and existing.step_type == StepType.NONE:
+        await db.delete(existing)
+        await db.commit()
 
     experiment = await fetch_experiment_or_404(rater.experiment_id, db)
     params = _load_json(experiment.assistance_params)

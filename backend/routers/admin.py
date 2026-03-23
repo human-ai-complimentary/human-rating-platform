@@ -11,6 +11,7 @@ from schemas import (
     ExperimentRoundResponse,
     ExperimentCreate,
     ExperimentResponse,
+    ExperimentUpdate,
     PilotStudyCreate,
     PlatformStatus,
     RecommendationResponse,
@@ -142,6 +143,15 @@ async def export_ratings(
             )
         },
     )
+
+
+@secure_router.patch("/experiments/{experiment_id}", response_model=ExperimentResponse)
+async def update_experiment(
+    experiment_id: int,
+    payload: ExperimentUpdate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.update_experiment(experiment_id=experiment_id, payload=payload, db=db)
 
 
 @secure_router.delete("/experiments/{experiment_id}")
