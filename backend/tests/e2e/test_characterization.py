@@ -16,8 +16,11 @@ import respx
 from fastapi.testclient import TestClient
 from httpx import Response
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import ProlificMode, get_settings
+from models import ExperimentRound
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -584,6 +587,32 @@ def _mock_get_study(
     )
 
 
+def _patch_commit_to_fail_for_round(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    round_number: int,
+) -> None:
+    original_commit = AsyncSession.commit
+    state = {"failed": False}
+
+    async def failing_commit(self: AsyncSession, *args, **kwargs):
+        pending_rounds = [
+            obj
+            for obj in self.sync_session.new
+            if isinstance(obj, ExperimentRound) and obj.round_number == round_number
+        ]
+        if pending_rounds and not state["failed"]:
+            state["failed"] = True
+            raise IntegrityError(
+                "forced experiment_round conflict",
+                params=None,
+                orig=Exception("forced experiment_round conflict"),
+            )
+        return await original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "commit", failing_commit)
+
+
 def _create_prolific_experiment(client: TestClient) -> tuple[dict, dict]:
     create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
     assert create_resp.status_code == 200, create_resp.text
@@ -685,6 +714,34 @@ def test_prolific_second_pilot_is_rejected(client: TestClient, enable_prolific):
 
     assert resp.status_code == 400
     assert resp.json()["detail"] == "A pilot study has already been run for this experiment"
+
+
+@respx.mock
+def test_prolific_pilot_commit_conflict_deletes_orphaned_study(
+    client: TestClient,
+    enable_prolific,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    create_resp = client.post("/api/admin/experiments", json=_prolific_experiment_payload())
+    assert create_resp.status_code == 200, create_resp.text
+    experiment = create_resp.json()
+
+    _patch_commit_to_fail_for_round(monkeypatch, round_number=0)
+    create_route = _mock_create_study(study_id="PILOT_ORPHAN")
+    delete_route = _mock_delete_study(study_id="PILOT_ORPHAN")
+
+    resp = client.post(
+        f"/api/admin/experiments/{experiment['id']}/prolific/pilot",
+        json=_pilot_payload(),
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "A pilot study has already been run for this experiment"
+    assert create_route.called
+    assert delete_route.called
+
+    rounds = client.get(f"/api/admin/experiments/{experiment['id']}/prolific/rounds").json()
+    assert rounds == []
 
 
 @respx.mock
@@ -837,6 +894,80 @@ def test_prolific_round_creation_requires_closing_previous_round(
     )
     assert first_round.status_code == 200, first_round.text
     assert first_round.json()["round_number"] == 1
+
+
+@respx.mock
+def test_prolific_round_commit_conflict_deletes_orphaned_study(
+    client: TestClient,
+    enable_prolific,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_publish_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish").status_code
+        == 200
+    )
+    _mock_close_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close").status_code
+        == 200
+    )
+
+    _patch_commit_to_fail_for_round(monkeypatch, round_number=1)
+    create_route = _mock_create_study(study_id="ROUND_ORPHAN")
+    delete_route = _mock_delete_study(study_id="ROUND_ORPHAN")
+
+    resp = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "A round with this number already exists for this experiment"
+    assert create_route.called
+    assert delete_route.called
+
+    rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
+    assert [round_["round_number"] for round_ in rounds] == [0]
+
+
+@respx.mock
+def test_prolific_round_commit_conflict_preserves_409_when_cleanup_fails(
+    client: TestClient,
+    enable_prolific,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_publish_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish").status_code
+        == 200
+    )
+    _mock_close_study()
+    assert (
+        client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/close").status_code
+        == 200
+    )
+
+    _patch_commit_to_fail_for_round(monkeypatch, round_number=1)
+    _mock_create_study(study_id="ROUND_ORPHAN_DELETE_FAIL")
+    delete_route = _mock_delete_study(study_id="ROUND_ORPHAN_DELETE_FAIL", status=500)
+
+    resp = client.post(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds",
+        json={"places": 4},
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "A round with this number already exists for this experiment"
+    assert delete_route.called
+    assert "Failed to clean up orphaned Prolific study ROUND_ORPHAN_DELETE_FAIL" in caplog.text
 
 
 @respx.mock

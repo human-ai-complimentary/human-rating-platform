@@ -10,7 +10,8 @@ import {
   useUser as useClerkUser,
 } from '@clerk/clerk-react';
 
-const E2E_AUTH_BYPASS_ENABLED = import.meta.env.VITE_E2E_BYPASS_AUTH === 'true';
+const E2E_AUTH_BYPASS_ENABLED =
+  import.meta.env.VITE_E2E_BYPASS_AUTH === 'true' && !import.meta.env.PROD;
 const E2E_AUTH_EMAIL = 'e2e-admin@example.com';
 
 type AuthProviderProps = {

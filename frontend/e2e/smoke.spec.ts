@@ -365,7 +365,7 @@ test('create experiment, upload CSV, run pilot, close it, and launch a round', a
   await page.getByRole('button', { name: 'Create Experiment' }).click();
 
   await expect(page.getByRole('heading', { name: 'Hour Breakdown Smoke Test' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Prolific Study Rounds' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Prolific Workflow' })).toBeVisible();
   await expect(page.getByTestId('prolific-mode-badge')).toHaveText('Real Mode');
   await expect(page.getByTestId('prolific-mode-notice')).toContainText('Real Prolific mode is enabled');
   await expect(page.getByTestId('run-pilot-button')).toBeVisible();
@@ -384,7 +384,7 @@ test('create experiment, upload CSV, run pilot, close it, and launch a round', a
   await page.getByTestId('pilot-hours-input').fill('5');
   await page.getByTestId('run-pilot-button').click();
 
-  await expect(page.getByText('Pilot Study', { exact: true })).toBeVisible();
+  await expect(page.getByText('Pilot Round', { exact: true })).toBeVisible();
   await expect(page.getByTestId('publish-round-0')).toBeVisible();
   await expect(page.getByTestId('recommendation-panel')).toContainText('Recommendation for next round');
   await expect(page.getByTestId('completion-url-input')).toHaveValue(
@@ -394,15 +394,15 @@ test('create experiment, upload CSV, run pilot, close it, and launch a round', a
 
   await page.getByTestId('publish-round-0').click();
   await expect(page.getByTestId('close-round-0')).toBeVisible();
-  await expect(page.getByText('ACTIVE')).toBeVisible();
+  await expect(page.getByTestId('study-rounds-list').getByText('ACTIVE')).toBeVisible();
 
   await page.getByTestId('close-round-0').click();
-  await expect(page.getByText('AWAITING_REVIEW')).toBeVisible();
+  await expect(page.getByTestId('study-rounds-list').getByText('AWAITING_REVIEW')).toBeVisible();
   await expect(page.getByTestId('launch-round-button')).toBeEnabled();
 
   await page.getByTestId('launch-round-button').click();
-  await expect(page.getByText('Round 1')).toBeVisible();
-  await expect(page.getByText('4 places', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('study-rounds-list').getByText('Round 1')).toBeVisible();
+  await expect(page.getByTestId('study-rounds-list').getByText('4 places', { exact: true })).toBeVisible();
   await expect(page.getByTestId('publish-round-1')).toBeVisible();
 
   const exportLink = page.getByTestId('export-link');

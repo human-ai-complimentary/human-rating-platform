@@ -26,6 +26,7 @@ from .prolific import (
     build_external_study_url,
     build_study_url,
     create_study,
+    delete_study,
     generate_completion_code,
     get_study,
     publish_study,
@@ -120,6 +121,47 @@ async def _refresh_round_statuses(rounds: list[ExperimentRound], db: AsyncSessio
 
     if changed:
         await db.commit()
+
+
+async def _cleanup_orphaned_study(study_id: str) -> None:
+    settings = get_settings()
+    if not settings.prolific.enabled:
+        return
+
+    try:
+        await delete_study(
+            settings=settings.prolific,
+            study_id=study_id,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to clean up orphaned Prolific study %s after local DB failure",
+            study_id,
+        )
+
+
+async def _commit_round_creation(
+    db: AsyncSession,
+    round_: ExperimentRound,
+    *,
+    conflict_detail: str,
+    generic_detail: str,
+) -> None:
+    db.add(round_)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        await _cleanup_orphaned_study(round_.prolific_study_id)
+        raise HTTPException(status_code=409, detail=conflict_detail) from exc
+    except Exception as exc:
+        await db.rollback()
+        await _cleanup_orphaned_study(round_.prolific_study_id)
+        logger.exception(
+            "Failed to save local round record after creating Prolific study %s",
+            round_.prolific_study_id,
+        )
+        raise HTTPException(status_code=500, detail=generic_detail) from exc
 
 
 async def _fetch_round_or_404(
@@ -290,8 +332,12 @@ async def run_pilot_study(
         device_compatibility=json.dumps(payload.device_compatibility),
         places_requested=payload.pilot_hours,
     )
-    db.add(round_)
-    await db.commit()
+    await _commit_round_creation(
+        db,
+        round_,
+        conflict_detail="A pilot study has already been run for this experiment",
+        generic_detail="Failed to save pilot study after creating it on Prolific. Please try again.",
+    )
     await db.refresh(round_)
 
     logger.info(
@@ -365,15 +411,12 @@ async def run_experiment_round(
         device_compatibility=pilot_round.device_compatibility,
         places_requested=payload.places,
     )
-    db.add(round_)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="A round with this number already exists for this experiment",
-        )
+    await _commit_round_creation(
+        db,
+        round_,
+        conflict_detail="A round with this number already exists for this experiment",
+        generic_detail="Failed to save round after creating it on Prolific. Please try again.",
+    )
     await db.refresh(round_)
 
     logger.info(
