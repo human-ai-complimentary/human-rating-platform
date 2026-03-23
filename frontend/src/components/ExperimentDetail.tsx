@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import Analytics from './Analytics';
-import type { Experiment, ExperimentStats, Upload } from '../types';
+import type {
+  Experiment,
+  ExperimentRound,
+  ExperimentStats,
+  PilotStudyCreate,
+  RecommendationResponse,
+  Upload,
+} from '../types';
 
 interface ExperimentDetailProps {
   experiment: Experiment;
@@ -25,7 +32,19 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [includePreview, setIncludePreview] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishingRoundId, setPublishingRoundId] = useState<number | null>(null);
+  const [closingRoundId, setClosingRoundId] = useState<number | null>(null);
+  const [prolificMode, setProlificMode] = useState<'loading' | 'disabled' | 'real'>('loading');
+  const [platformStatusMessage, setPlatformStatusMessage] = useState<string | null>(null);
+  const [rounds, setRounds] = useState<ExperimentRound[]>([]);
+  const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
+  const [pilotForm, setPilotForm] = useState<PilotStudyCreate>({
+    description: '',
+    estimated_completion_time: 60,
+    reward: 900,
+    pilot_hours: 5,
+    device_compatibility: ['desktop'],
+  });
 
   // TODO: When the methods team provides assistance methods for experimentation, we should add them here.
   // TODO: Load these from experiment settings in the backend
@@ -61,15 +80,51 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     try {
       const data = await api.listUploads(experiment.id);
       setUploads(data);
-    } catch {
-      // Ignore errors for uploads list
+    } catch (err) {
+      setUploads([]);
+      setError(err instanceof Error ? err.message : 'Failed to load uploads');
     }
   }, [experiment.id]);
+
+  const loadRounds = useCallback(async () => {
+    try {
+      const data = await api.listExperimentRounds(experiment.id);
+      setRounds(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load round history');
+    }
+  }, [experiment.id]);
+
+  const loadRecommendation = useCallback(async () => {
+    try {
+      const data = await api.getRecommendation(experiment.id, { includePreview });
+      setRecommendation(data);
+    } catch (err) {
+      setRecommendation(null);
+      setError(err instanceof Error ? err.message : 'Failed to load recommendation');
+    }
+  }, [experiment.id, includePreview]);
 
   useEffect(() => {
     loadStats();
     loadUploads();
+    api.getPlatformStatus()
+      .then((s) => {
+        setProlificMode(s.prolific_mode);
+        setPlatformStatusMessage(null);
+      })
+      .catch(() => {
+        setProlificMode('disabled');
+        setPlatformStatusMessage('Unable to load platform status. Assuming Prolific is disabled.');
+      });
   }, [loadStats, loadUploads]);
+
+  useEffect(() => {
+    if (prolificMode === 'real') {
+      loadRounds();
+      loadRecommendation();
+    }
+  }, [prolificMode, loadRounds, loadRecommendation]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,8 +155,8 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   };
 
   const handleDelete = async () => {
-    const prolificWarning = experiment.prolific_study_id
-      ? ' The linked Prolific study will also be deleted.'
+    const prolificWarning = rounds.length > 0
+      ? ' Linked Prolific studies for every round will also be deleted.'
       : '';
     if (window.confirm(`Delete "${experiment.name}"? This cannot be undone.${prolificWarning}`)) {
       try {
@@ -113,29 +168,83 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     }
   };
 
-  const handlePublishProlific = async () => {
+  const handlePublishRound = async (roundId: number, roundNumber: number) => {
     if (!window.confirm('Publish this study on Prolific? Participants will be able to start immediately.')) {
       return;
     }
     setError(null);
-    setIsPublishing(true);
+    setPublishingRoundId(roundId);
     try {
-      await api.publishProlificStudy(experiment.id);
-      setSuccess('Study published on Prolific!');
+      await api.publishExperimentRound(experiment.id, roundId);
+      setSuccess(`Round ${roundNumber === 0 ? 'pilot' : roundNumber} published on Prolific!`);
       setTimeout(() => setSuccess(null), 3000);
-      onRefresh();
+      await loadRounds();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to publish study');
     } finally {
-      setIsPublishing(false);
+      setPublishingRoundId(null);
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setSuccess('Copied to clipboard!');
-    setTimeout(() => setSuccess(null), 2000);
+  const handleCloseRound = async (roundId: number, roundNumber: number) => {
+    if (!window.confirm('Close this round on Prolific? New rounds stay blocked until the current round is closed.')) {
+      return;
+    }
+    setError(null);
+    setClosingRoundId(roundId);
+    try {
+      await api.closeExperimentRound(experiment.id, roundId);
+      setSuccess(`Round ${roundNumber === 0 ? 'pilot' : roundNumber} closed on Prolific!`);
+      setTimeout(() => setSuccess(null), 3000);
+      await loadRounds();
+      await loadRecommendation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to close round');
+    } finally {
+      setClosingRoundId(null);
+    }
   };
+
+  const handleRunPilot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      await api.runPilotStudy(experiment.id, pilotForm);
+      setSuccess('Pilot draft created on Prolific. Publish it when ready.');
+      setTimeout(() => setSuccess(null), 4000);
+      onRefresh();
+      await loadRounds();
+      await loadRecommendation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create pilot study');
+    }
+  };
+
+  const handleRunRound = async () => {
+    if (!recommendation) return;
+    const places = recommendation.recommended_places;
+    if (!window.confirm(`Launch a new round with ${places} Prolific places?`)) return;
+    setError(null);
+    try {
+      await api.runExperimentRound(experiment.id, places);
+      setSuccess(`Round ${nextRoundNumber} draft created on Prolific. Publish it when ready.`);
+      setTimeout(() => setSuccess(null), 4000);
+      await loadRounds();
+      await loadRecommendation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create study round');
+    }
+  };
+
+  const latestRound = rounds.length > 0 ? rounds[rounds.length - 1] : null;
+  const latestRoundClosed = latestRound
+    ? ['AWAITING_REVIEW', 'COMPLETED'].includes(latestRound.prolific_study_status)
+    : false;
+  const nextRoundNumber = latestRound ? latestRound.round_number + 1 : 1;
+  const roundLaunchBlockedMessage = !latestRoundClosed && latestRound
+    ? `Waiting for ${latestRound.round_number === 0 ? 'the pilot round' : `Round ${latestRound.round_number}`} to close. Current status: ${latestRound.prolific_study_status}.`
+    : null;
+
 
   if (showAnalytics) {
     return (
@@ -194,6 +303,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       padding: '16px 20px',
       borderBottom: '1px solid #e0e0e0',
       background: '#fafafa',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
     },
     sectionTitle: {
       margin: 0,
@@ -203,8 +316,24 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       letterSpacing: '0.5px',
       color: '#555',
     },
+    statusBadge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      borderRadius: '999px',
+      padding: '4px 10px',
+      fontSize: '12px',
+      fontWeight: 600,
+      letterSpacing: '0.2px',
+    },
     sectionBody: {
       padding: '20px',
+    },
+    infoBanner: {
+      borderRadius: '8px',
+      padding: '12px 14px',
+      marginBottom: '16px',
+      fontSize: '13px',
+      lineHeight: 1.5,
     },
     statsGrid: {
       display: 'grid',
@@ -253,6 +382,13 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
       cursor: 'pointer',
       fontSize: '14px',
       fontWeight: 500,
+    },
+    disabledButton: {
+      background: '#cbd5e1',
+      color: '#475569',
+      cursor: 'not-allowed',
+      opacity: 0.7,
+      boxShadow: 'none',
     },
     inputGroup: {
       marginBottom: '16px',
@@ -371,6 +507,27 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     },
   };
 
+  const prolificModeMeta = prolificMode === 'real'
+    ? {
+        badgeLabel: 'Real Mode',
+        badgeStyle: { background: '#e8f6ed', color: '#166534' },
+        bannerStyle: { ...styles.infoBanner, background: '#eefbf3', border: '1px solid #72c08f', color: '#166534' },
+        message: 'Real Prolific mode is enabled. Each launch creates an unpublished Prolific draft: start with the pilot, then close each round before creating the next one.',
+      }
+    : prolificMode === 'loading'
+      ? {
+          badgeLabel: 'Checking...',
+          badgeStyle: { background: '#f1f3f5', color: '#495057' },
+          bannerStyle: { ...styles.infoBanner, background: '#f8f9fa', border: '1px solid #d0d7de', color: '#495057' },
+          message: 'Checking Prolific mode for this environment...',
+        }
+      : {
+          badgeLabel: 'Disabled',
+          badgeStyle: { background: '#f8f0f0', color: '#9f1239' },
+          bannerStyle: { ...styles.infoBanner, background: '#fff5f5', border: '1px solid #f1b8be', color: '#9f1239' },
+          message: 'Prolific is disabled for this environment. Set `PROLIFIC__MODE=real` and configure a Prolific API token to enable paid rounds.',
+        };
+
   return (
     <div style={styles.container}>
       {/* Header */}
@@ -416,11 +573,12 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     <div style={styles.toggleInfo}>
                       <div style={styles.toggleLabel}>Include preview data</div>
                       <div style={styles.toggleDescription}>
-                        Show data from preview sessions in stats, analytics, and exports.
+                        Show data from preview sessions in stats, analytics, exports, and round recommendations.
                       </div>
                     </div>
                     <div style={styles.toggle}>
                       <div
+                        data-testid="include-preview-toggle"
                         style={{
                           ...styles.toggleTrack,
                           background: includePreview ? '#4a90d9' : '#ddd',
@@ -439,7 +597,12 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     <button style={styles.primaryButton} onClick={() => setShowAnalytics(true)}>
                       View Analytics
                     </button>
-                    <a href={api.getExportUrl(experiment.id, { includePreview })} download style={{ flex: 1 }}>
+                    <a
+                      data-testid="export-link"
+                      href={api.getExportUrl(experiment.id, { includePreview })}
+                      download
+                      style={{ flex: 1 }}
+                    >
                       <button style={{ ...styles.secondaryButton, width: '100%' }}>
                         Export CSV
                       </button>
@@ -450,90 +613,239 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
             </div>
           </div>
 
-          {/* Prolific Integration */}
+          {/* Prolific Study Rounds */}
           <div style={styles.section}>
             <div style={styles.sectionHeader}>
-              <h2 style={styles.sectionTitle}>Prolific Integration</h2>
+              <h2 style={styles.sectionTitle}>Prolific Workflow</h2>
+              <span
+                data-testid="prolific-mode-badge"
+                style={{ ...styles.statusBadge, ...prolificModeMeta.badgeStyle }}
+              >
+                {prolificModeMeta.badgeLabel}
+              </span>
             </div>
             <div style={styles.sectionBody}>
-              {experiment.prolific_study_id ? (
+              <div
+                data-testid="prolific-mode-notice"
+                style={prolificModeMeta.bannerStyle}
+              >
+                {prolificModeMeta.message}
+                {platformStatusMessage && (
+                  <div style={{ marginTop: '8px' }}>
+                    {platformStatusMessage}
+                  </div>
+                )}
+              </div>
+
+              {/* Preview link always available */}
+              <div style={{ ...styles.inputGroup, marginBottom: '20px' }}>
+                <button
+                  data-testid="preview-participant-button"
+                  onClick={() => {
+                    const previewId = `preview_${Date.now()}`;
+                    const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
+                    window.open(url, '_blank');
+                  }}
+                  style={styles.secondaryButton}
+                >
+                  Preview as Participant
+                </button>
+              </div>
+
+              {prolificMode === 'real' && (
                 <>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Prolific Study ID</label>
-                    <input
-                      type="text"
-                      value={experiment.prolific_study_id}
-                      readOnly
-                      onClick={(e) => {
-                        (e.target as HTMLInputElement).select();
-                        copyToClipboard(experiment.prolific_study_id!);
-                      }}
-                      style={styles.input}
-                    />
-                  </div>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Study Status</label>
-                    <div>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 10px',
-                        borderRadius: '4px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        background: experiment.prolific_study_status === 'ACTIVE' ? '#d4edda' : '#fff3cd',
-                        color: experiment.prolific_study_status === 'ACTIVE' ? '#155724' : '#856404',
+                  {/* Existing rounds list */}
+                  {rounds.length > 0 && (
+                  <div data-testid="study-rounds-list" style={{ marginBottom: '20px' }}>
+                    {rounds.map((round) => (
+                      <div key={round.id} style={{
+                        padding: '12px',
+                        background: '#f8f9fa',
+                        borderRadius: '6px',
+                        marginBottom: '8px',
+                        border: '1px solid #e0e0e0',
                       }}>
-                        {experiment.prolific_study_status}
-                      </span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: '14px' }}>
+                              {round.round_number === 0 ? 'Pilot Round' : `Round ${round.round_number}`}
+                            </span>
+                            <span style={{ marginLeft: '8px', fontSize: '12px', color: '#666' }}>
+                              {round.places_requested} places
+                            </span>
+                          </div>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: round.prolific_study_status === 'ACTIVE' ? '#d4edda'
+                              : ['COMPLETED', 'AWAITING_REVIEW'].includes(round.prolific_study_status) ? '#d1ecf1'
+                              : '#fff3cd',
+                            color: round.prolific_study_status === 'ACTIVE' ? '#155724'
+                              : ['COMPLETED', 'AWAITING_REVIEW'].includes(round.prolific_study_status) ? '#0c5460'
+                              : '#856404',
+                          }}>
+                            {round.prolific_study_status}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <button
+                            onClick={() => window.open(round.prolific_study_url, '_blank')}
+                            style={{ ...styles.secondaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
+                          >
+                            Open on Prolific
+                          </button>
+                          {round.prolific_study_status === 'UNPUBLISHED' && (
+                            <button
+                              data-testid={`publish-round-${round.round_number}`}
+                              onClick={() => handlePublishRound(round.id, round.round_number)}
+                              disabled={publishingRoundId === round.id}
+                              style={{ ...styles.primaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px' }}
+                            >
+                              {publishingRoundId === round.id ? 'Publishing...' : 'Publish'}
+                            </button>
+                          )}
+                          {!['UNPUBLISHED', 'AWAITING_REVIEW', 'COMPLETED'].includes(round.prolific_study_status) && (
+                            <button
+                              data-testid={`close-round-${round.round_number}`}
+                              onClick={() => handleCloseRound(round.id, round.round_number)}
+                              disabled={closingRoundId === round.id}
+                              style={{ ...styles.primaryButton, flex: 'none', padding: '6px 12px', fontSize: '12px', background: '#5f6b7a' }}
+                            >
+                              {closingRoundId === round.id ? 'Closing...' : 'Close Round'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  )}
+
+                  {/* Recommendation panel (when pilot has data) */}
+                  {recommendation && recommendation.avg_time_per_question_seconds > 0 && (
+                  <div data-testid="recommendation-panel" style={{
+                    padding: '12px',
+                    background: recommendation.is_complete ? '#d4edda' : '#f0f7ff',
+                    borderRadius: '6px',
+                    marginBottom: '16px',
+                    fontSize: '13px',
+                  }}>
+                    {recommendation.is_complete ? (
+                      <strong style={{ color: '#155724' }}>All questions have enough ratings!</strong>
+                    ) : (
+                      <>
+                        <div style={{ marginBottom: '6px' }}>
+                          <strong>Recommendation for next round</strong>
+                        </div>
+                        <div style={{ color: '#444', lineHeight: 1.6 }}>
+                          Avg time/question: <strong>{recommendation.avg_time_per_question_seconds.toFixed(0)}s</strong>
+                          {' · '}Remaining actions: <strong>{recommendation.remaining_rating_actions}</strong>
+                          {' · '}Hours left: <strong>{recommendation.total_hours_remaining.toFixed(1)}</strong>
+                        </div>
+                        <button
+                          data-testid="launch-round-button"
+                          onClick={handleRunRound}
+                          disabled={!latestRoundClosed}
+                          style={{
+                            ...styles.primaryButton,
+                            ...(!latestRoundClosed ? styles.disabledButton : {}),
+                            marginTop: '10px',
+                            width: 'auto',
+                            padding: '8px 16px',
+                          }}
+                        >
+                          Create Round {nextRoundNumber} Draft ({recommendation.recommended_places} places)
+                        </button>
+                        {roundLaunchBlockedMessage && (
+                          <div style={{ marginTop: '8px', color: '#666', lineHeight: 1.5 }}>
+                            {roundLaunchBlockedMessage}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  )}
+
+                  {/* Pilot form — shown when no pilot exists yet */}
+                  {rounds.length === 0 && (
+                  <form onSubmit={handleRunPilot}>
+                    <div style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>
+                      Create the first unpublished round with the study configuration you want to reuse. Pilot timing data drives the recommended size for later rounds.
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '8px', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => {
-                        window.open(experiment.prolific_study_url!, '_blank');
-                      }}
-                      style={styles.secondaryButton}
-                    >
-                      Open on Prolific
-                    </button>
-                    <button
-                      onClick={() => {
-                        const previewId = `preview_${Date.now()}`;
-                        const url = `${window.location.origin}/rate?experiment_id=${experiment.id}&PROLIFIC_PID=${previewId}&STUDY_ID=preview&SESSION_ID=preview&preview=true`;
-                        window.open(url, '_blank');
-                      }}
-                      style={styles.secondaryButton}
-                    >
-                      Preview as Participant
-                    </button>
-                    <button
-                      onClick={handlePublishProlific}
-                      disabled={isPublishing}
-                      style={{
-                        ...styles.primaryButton,
-                        ...(isPublishing ? { opacity: 0.6, cursor: 'not-allowed' } : {}),
-                      }}
-                    >
-                      {isPublishing ? 'Publishing...' : 'Publish on Prolific'}
-                    </button>
-                  </div>
-                  {experiment.prolific_completion_url && (
-                    <div style={{ ...styles.inputGroup, marginTop: '16px' }}>
-                      <label style={styles.label}>Completion URL</label>
+                    <div style={styles.inputGroup}>
+                      <label htmlFor="pilot-description" style={styles.label}>Study Description</label>
+                      <textarea
+                        id="pilot-description"
+                        data-testid="pilot-description-input"
+                        value={pilotForm.description}
+                        onChange={(e) => setPilotForm({ ...pilotForm, description: e.target.value })}
+                        placeholder="Describe the task for Prolific participants..."
+                        required
+                        style={{ ...styles.input, minHeight: '80px', resize: 'vertical' as const }}
+                      />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label htmlFor="pilot-estimated-completion-time" style={styles.label}>Estimated Completion Time (minutes)</label>
                       <input
-                        type="text"
-                        value={experiment.prolific_completion_url}
-                        readOnly
+                        id="pilot-estimated-completion-time"
+                        data-testid="pilot-estimated-completion-time-input"
+                        type="number"
+                        value={pilotForm.estimated_completion_time}
+                        onChange={(e) => setPilotForm({ ...pilotForm, estimated_completion_time: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
                         style={styles.input}
                       />
-                      <div style={styles.hint}>Raters redirect here when finished.</div>
                     </div>
+                    <div style={styles.inputGroup}>
+                      <label htmlFor="pilot-reward" style={styles.label}>Reward (cents)</label>
+                      <input
+                        id="pilot-reward"
+                        data-testid="pilot-reward-input"
+                        type="number"
+                        value={pilotForm.reward}
+                        onChange={(e) => setPilotForm({ ...pilotForm, reward: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
+                        style={styles.input}
+                      />
+                      <div style={styles.hint}>Payment in cents (e.g., 900 = $9.00)</div>
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label htmlFor="pilot-hours" style={styles.label}>Pilot Hours (# of raters)</label>
+                      <input
+                        id="pilot-hours"
+                        data-testid="pilot-hours-input"
+                        type="number"
+                        value={pilotForm.pilot_hours}
+                        onChange={(e) => setPilotForm({ ...pilotForm, pilot_hours: parseInt(e.target.value) || 0 })}
+                        min="1"
+                        required
+                        style={styles.input}
+                      />
+                      <div style={styles.hint}>Each rater does 1 hour. 5 is a good default for timing calibration.</div>
+                    </div>
+                    <button data-testid="run-pilot-button" type="submit" style={styles.primaryButton}>
+                      Create Pilot Draft
+                    </button>
+                  </form>
+                  )}
+
+                  {experiment.prolific_completion_url && (
+                  <div style={{ ...styles.inputGroup, marginTop: rounds.length === 0 ? '16px' : '0' }}>
+                    <label style={styles.label}>Completion URL</label>
+                    <input
+                      data-testid="completion-url-input"
+                      type="text"
+                      value={experiment.prolific_completion_url}
+                      readOnly
+                      style={styles.input}
+                    />
+                    <div style={styles.hint}>Raters redirect here when finished.</div>
+                  </div>
                   )}
                 </>
-              ) : (
-                <div style={{ color: '#6c757d', fontStyle: 'italic' }}>
-                  No Prolific study linked to this experiment.
-                </div>
               )}
             </div>
           </div>
@@ -586,8 +898,10 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
               {/* Upload form */}
               <form onSubmit={handleUpload}>
                 <div style={styles.inputGroup}>
-                  <label style={styles.label}>Add Questions from CSV</label>
+                  <label htmlFor="upload-csv" style={styles.label}>Add Questions from CSV</label>
                   <input
+                    id="upload-csv"
+                    data-testid="upload-csv-input"
                     type="file"
                     accept=".csv"
                     onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
@@ -598,6 +912,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                   </div>
                 </div>
                 <button
+                  data-testid="upload-csv-button"
                   type="submit"
                   disabled={!uploadFile}
                   style={{

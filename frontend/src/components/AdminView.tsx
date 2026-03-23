@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import type { Experiment, ProlificStudyConfig } from '../types';
+import type { Experiment, ExperimentCreate } from '../types';
 
 function AdminView() {
   const navigate = useNavigate();
@@ -10,15 +10,10 @@ function AdminView() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const [name, setName] = useState('');
-  const [numRatings, setNumRatings] = useState(3);
-
-  const [prolificConfig, setProlificConfig] = useState<ProlificStudyConfig>({
-    description: '',
-    estimated_completion_time: 10,
-    reward: 500,
-    total_available_places: 50,
-    device_compatibility: ['desktop'],
+  const [newExperiment, setNewExperiment] = useState<ExperimentCreate>({
+    name: '',
+    num_ratings_per_question: 3,
+    prolific_completion_url: '',
   });
 
   useEffect(() => {
@@ -43,19 +38,11 @@ function AdminView() {
     setSuccess(null);
 
     try {
-      const created = await api.createExperiment({
-        name,
-        num_ratings_per_question: numRatings,
-        prolific: prolificConfig,
-      });
-      setName('');
-      setNumRatings(3);
-      setProlificConfig({
-        description: '',
-        estimated_completion_time: 10,
-        reward: 500,
-        total_available_places: 50,
-        device_compatibility: ['desktop'],
+      const created = await api.createExperiment(newExperiment);
+      setNewExperiment({
+        name: '',
+        num_ratings_per_question: 3,
+        prolific_completion_url: '',
       });
       navigate(`/admin/experiments/${created.id}`);
     } catch (err) {
@@ -204,71 +191,34 @@ function AdminView() {
           <div style={styles.sectionBody}>
             <form onSubmit={handleCreateExperiment}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Experiment Name</label>
+                <label htmlFor="experiment-name" style={styles.label}>Experiment Name</label>
                 <input
+                  id="experiment-name"
+                  data-testid="experiment-name-input"
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  value={newExperiment.name}
+                  onChange={(e) => setNewExperiment({ ...newExperiment, name: e.target.value })}
                   placeholder="e.g., Factuality Evaluation Round 1"
                   required
                   style={styles.input}
                 />
               </div>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Ratings per Question</label>
+                <label htmlFor="ratings-per-question" style={styles.label}>Ratings per Question</label>
                 <input
+                  id="ratings-per-question"
+                  data-testid="ratings-per-question-input"
                   type="number"
-                  value={numRatings}
-                  onChange={(e) => setNumRatings(parseInt(e.target.value))}
+                  value={newExperiment.num_ratings_per_question}
+                  onChange={(e) => setNewExperiment({ ...newExperiment, num_ratings_per_question: parseInt(e.target.value) })}
                   min="1"
                   required
                   style={styles.input}
                 />
                 <div style={styles.hint}>How many different raters should evaluate each question.</div>
               </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Study Description (for Prolific)</label>
-                <textarea
-                  value={prolificConfig.description}
-                  onChange={(e) => setProlificConfig({ ...prolificConfig, description: e.target.value })}
-                  placeholder="Describe the task for Prolific participants..."
-                  required
-                  style={{ ...styles.input, minHeight: '80px', resize: 'vertical' as const }}
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Estimated Completion Time (minutes)</label>
-                <input
-                  type="number"
-                  value={prolificConfig.estimated_completion_time}
-                  onChange={(e) => setProlificConfig({ ...prolificConfig, estimated_completion_time: parseInt(e.target.value) || 0 })}
-                  min="1"
-                  required
-                  style={styles.input}
-                />
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Reward (cents)</label>
-                <input
-                  type="number"
-                  value={prolificConfig.reward}
-                  onChange={(e) => setProlificConfig({ ...prolificConfig, reward: parseInt(e.target.value) || 0 })}
-                  min="1"
-                  required
-                  style={styles.input}
-                />
-                <div style={styles.hint}>Payment in cents (e.g., 500 = $5.00)</div>
-              </div>
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Total Available Places</label>
-                <input
-                  type="number"
-                  value={prolificConfig.total_available_places}
-                  onChange={(e) => setProlificConfig({ ...prolificConfig, total_available_places: parseInt(e.target.value) || 0 })}
-                  min="1"
-                  required
-                  style={styles.input}
-                />
+              <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f7ff', borderRadius: '6px', fontSize: '13px', color: '#555' }}>
+                After creating the experiment and uploading questions, use the Prolific section to run a pilot study and launch rating rounds.
               </div>
               <button type="submit" style={styles.primaryButton}>
                 Create Experiment
