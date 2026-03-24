@@ -14,13 +14,6 @@ from config import get_settings  # noqa: E402
 from models import Experiment, Question  # noqa: E402
 
 
-def _to_optional(value: str | None) -> str | None:
-    if value is None:
-        return None
-    stripped = value.strip()
-    return stripped or None
-
-
 def main() -> int:
     settings = get_settings()
 
@@ -41,7 +34,7 @@ def main() -> int:
             experiment = Experiment(
                 name=settings.seeding.experiment_name,
                 num_ratings_per_question=settings.seeding.num_ratings_per_question,
-                prolific_completion_url=_to_optional(settings.seeding.prolific_completion_url),
+                prolific_completion_url=settings.seeding.prolific_completion_url,
             )
             session.add(experiment)
             session.commit()

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from enum import Enum
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -95,13 +96,19 @@ class SeedingSettings(_StrictModel):
     prolific_completion_url: str | None = None
 
 
+class ProlificMode(str, Enum):
+    DISABLED = "disabled"
+    REAL = "real"
+
+
 class ProlificSettings(_StrictModel):
+    mode: ProlificMode = ProlificMode.DISABLED
     api_token: str = ""
     base_url: str = "https://api.prolific.com/api/v1"
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_token)
+        return self.mode != ProlificMode.DISABLED
 
 
 class Settings(BaseSettings):
@@ -122,6 +129,13 @@ class Settings(BaseSettings):
     app_secret_key: str = Field(
         description="Secret for signing the HTTP-only admin session cookie.",
     )
+    # Dedicated secret for rater session tokens. If not provided, falls back to app_secret_key
+    rater_session_secret_key: str | None = Field(
+        default=None,
+        description="Secret for signing rater session tokens (fallbacks to app_secret_key if unset).",
+    )
+    # Rater-session token TTL in seconds. Defaults to the session duration (60 minutes).
+    rater_session_ttl_seconds: int = Field(default=60 * 60)
     hrp_session_cookie: str = Field(default="hrp_session")
     hrp_session_max_age: int = Field(default=60 * 60 * 24 * 7)  # 7 days
     cookie_secure: bool = Field(default=False)
@@ -185,6 +199,11 @@ class Settings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         return self.sync_database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    @property
+    def effective_rater_session_secret(self) -> str:
+        # Prefer dedicated secret; fallback to app_secret_key for backward compatibility
+        return (self.rater_session_secret_key or self.app_secret_key).strip()
 
 
 @lru_cache(maxsize=1)

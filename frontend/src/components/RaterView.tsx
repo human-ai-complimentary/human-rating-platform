@@ -7,8 +7,10 @@ import DelegationView from './DelegationView';
 import type { Session, Question } from '../types';
 
 function RaterView() {
+  const STORAGE_KEY = 'hrp_rater_session';
   const [searchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(null);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [question, setQuestion] = useState<Question | null>(null);
   const [questionsCompleted, setQuestionsCompleted] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -22,10 +24,10 @@ function RaterView() {
   const sessionId = searchParams.get('SESSION_ID');
   const isPreview = searchParams.get('preview') === 'true';
 
-  const loadNextQuestion = useCallback(async (raterId: number) => {
+  const loadNextQuestion = useCallback(async (token: string) => {
     try {
       setLoading(true);
-      const q = await api.getNextQuestion(raterId);
+      const q = await api.getNextQuestion(token);
       if (q === null || (typeof q === 'object' && Object.keys(q).length === 0)) {
         setAllDone(true);
       } else {
@@ -45,8 +47,37 @@ function RaterView() {
   const startedRef = useRef(false);
 
   useEffect(() => {
-    if (!experimentId || !prolificId) {
-      setError('Missing experiment_id or PROLIFIC_PID in URL');
+    // Resume path: if we have a stored session, restore it and skip param checks
+    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (stored && !startedRef.current) {
+      startedRef.current = true;
+      try {
+        const parsed = JSON.parse(stored) as { session: Session } | { token: string; session: Session };
+        const sess = 'session' in parsed ? parsed.session : null;
+        const token = (sess && (sess as any).rater_session_token) || ('token' in parsed ? (parsed as any).token : null);
+        if (sess && token) {
+          setSession(sess);
+          setSessionToken(token);
+          setLoading(true);
+          // Hydrate progress and question in parallel
+          Promise.all([
+            api
+              .getSessionStatus(token)
+              .then(s => setQuestionsCompleted(s.questions_completed))
+              .catch(() => {}),
+            loadNextQuestion(token),
+          ]).finally(() => setLoading(false));
+          return;
+        }
+      } catch {
+        // Corrupt storage; clear and continue to normal flow
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
+    }
+
+    // Normal start flow: require Prolific params
+    if (!experimentId || !prolificId || !studyId || !sessionId) {
+      setError('Please access this study from Prolific.');
       setLoading(false);
       return;
     }
@@ -56,11 +87,22 @@ function RaterView() {
     if (startedRef.current) return;
     startedRef.current = true;
 
-    api.startSession(experimentId, prolificId, studyId, sessionId, isPreview)
+    api
+      .startSession(experimentId, prolificId, studyId, sessionId, isPreview)
       .then(data => {
         setSession(data);
+        setSessionToken(data.rater_session_token);
+        // Persist session so a refresh can resume without Prolific params
+        try {
+          sessionStorage.setItem(
+            STORAGE_KEY,
+          JSON.stringify({ session: data })
+          );
+        } catch {
+          // Ignore storage failures (private mode, quota, etc.)
+        }
         if (data.experiment_type === 'rating') {
-          return loadNextQuestion(data.rater_id);
+          return loadNextQuestion(data.rater_session_token);
         }
         // For chat/delegation, the DelegationView handles task fetching
         setLoading(false);
@@ -74,6 +116,14 @@ function RaterView() {
   useEffect(() => {
     if (!(sessionExpired || allDone)) return;
     const completionUrl = session?.completion_url;
+
+    // Clear persisted session once we're done or expired (always)
+    try {
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+
     if (!completionUrl) return;
 
     const timer = setTimeout(() => {
@@ -83,17 +133,17 @@ function RaterView() {
   }, [sessionExpired, allDone, session?.completion_url]);
 
   const handleSubmit = async (answer: string, confidence: number, timeStarted: string) => {
-    if (!session || !question) return;
+    if (!session || !question || !sessionToken) return;
 
     try {
-      await api.submitRating(session.rater_id, {
+      await api.submitRating(sessionToken, {
         question_id: question.id,
         answer,
         confidence,
         time_started: timeStarted,
       });
       setQuestionsCompleted(prev => prev + 1);
-      await loadNextQuestion(session.rater_id);
+      await loadNextQuestion(sessionToken);
     } catch (err) {
       if (err instanceof Error && err.message === 'Session expired') {
         setSessionExpired(true);
@@ -285,10 +335,7 @@ function RaterView() {
           Preview mode — ratings submitted here are real and will appear in your data.
         </div>
       )}
-      <Timer
-        sessionEndTime={session.session_end_time}
-        onExpire={handleSessionExpired}
-      />
+      <Timer sessionEndTime={session.session_end_time} onExpire={handleSessionExpired} />
 
       <div style={styles.header}>
         <h2 style={styles.experimentName}>{session.experiment_name}</h2>

@@ -19,5 +19,6 @@ num_ratings_per_question = 3
 prolific_completion_url = ""
 
 [prolific]
+mode = "disabled"
 api_token = ""
 base_url = "https://api.prolific.com/api/v1"

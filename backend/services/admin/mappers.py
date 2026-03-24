@@ -8,20 +8,12 @@ from schemas import ExperimentResponse
 QUESTION_PREVIEW_LENGTH = 100
 
 
-PROLIFIC_STUDY_URL_TEMPLATE = "https://app.prolific.com/researcher/workspaces/studies/{study_id}"
-
-
 def build_experiment_response(
     experiment: Experiment,
     *,
     question_count: int,
     rating_count: int,
 ) -> ExperimentResponse:
-    prolific_study_url = (
-        PROLIFIC_STUDY_URL_TEMPLATE.format(study_id=experiment.prolific_study_id)
-        if experiment.prolific_study_id
-        else None
-    )
     return ExperimentResponse(
         id=experiment.id,
         name=experiment.name,
@@ -29,9 +21,6 @@ def build_experiment_response(
         num_ratings_per_question=experiment.num_ratings_per_question,
         experiment_type=experiment.experiment_type,
         prolific_completion_url=experiment.prolific_completion_url,
-        prolific_study_id=experiment.prolific_study_id,
-        prolific_study_status=experiment.prolific_study_status,
-        prolific_study_url=prolific_study_url,
         question_count=question_count,
         rating_count=rating_count,
     )

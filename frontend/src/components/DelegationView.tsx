@@ -34,7 +34,7 @@ function DelegationView({ session, experimentId, prolificId, onComplete }: Deleg
 
   const handleComplete = async () => {
     try {
-      await api.endSession(session.rater_id);
+      await api.endSession(session.rater_session_token);
     } catch {
       // best-effort; proceed to completion regardless
     }
