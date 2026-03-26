@@ -282,6 +282,10 @@ export const api = {
     return requestJson<Experiment[]>(routes.admin.experiments);
   },
 
+  async getExperiment(experimentId: number): Promise<Experiment> {
+    return requestJson<Experiment>(routes.admin.experiment(experimentId));
+  },
+
   async uploadQuestions(experimentId: number, file: File): Promise<MessageResponse> {
     const formData = new FormData();
     formData.append('file', file);

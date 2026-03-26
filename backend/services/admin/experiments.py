@@ -83,6 +83,28 @@ async def list_experiments(
     ]
 
 
+async def get_experiment(
+    experiment_id: int,
+    db: AsyncSession,
+) -> ExperimentResponse:
+    experiment = await fetch_experiment_or_404(experiment_id, db)
+
+    question_count = await fetch_total_questions_for_experiment(experiment_id, db)
+    rating_count = (
+        await db.execute(
+            select(func.count(Rating.id))
+            .join(Question, Rating.question_id == Question.id)
+            .where(Question.experiment_id == experiment_id)
+        )
+    ).scalar_one()
+
+    return build_experiment_response(
+        experiment,
+        question_count=question_count,
+        rating_count=int(rating_count or 0),
+    )
+
+
 async def delete_experiment(
     experiment_id: int,
     db: AsyncSession,
