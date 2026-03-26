@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from datetime import UTC, datetime
 from typing import Optional
 
@@ -8,8 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import Settings
-from models import Rating, Rater
-from questions import get_random_task_id
+from models import ExperimentType, Rating, Rater
 from schemas import (
     QuestionResponse,
     RaterStartResponse,
@@ -25,6 +25,7 @@ from .mappers import (
 from .session_token import issue_rater_session_token
 from .queries import (
     fetch_eligible_questions_with_counts,
+    fetch_delegation_question_ids_for_experiment,
     fetch_existing_rater_for_experiment,
     fetch_existing_rating,
     fetch_experiment_or_404,
@@ -84,7 +85,20 @@ async def start_session(
             rater_session_token=token,
         )
 
-    is_delegation = experiment.experiment_type in ("chat", "delegation")
+    is_delegation = experiment.experiment_type in (ExperimentType.CHAT, ExperimentType.DELEGATION)
+    delegation_task_id: str | None = None
+    if is_delegation:
+        question_ids = await fetch_delegation_question_ids_for_experiment(
+            experiment_id=experiment_id,
+            db=db,
+        )
+        if not question_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="This experiment has no uploaded tasks yet",
+            )
+        delegation_task_id = str(random.choice(question_ids))
+
     rater = Rater(
         prolific_id=prolific_pid,
         study_id=study_id,
@@ -93,7 +107,7 @@ async def start_session(
         session_start=datetime.now(UTC),
         is_active=True,
         is_preview=is_preview,
-        delegation_task_id=get_random_task_id() if is_delegation else None,
+        delegation_task_id=delegation_task_id,
     )
     db.add(rater)
     await db.commit()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 from typing import Any
 
@@ -9,7 +10,7 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models import Question, Upload
+from models import ExperimentType, Question, Upload
 from .mappers import build_upload_response
 from .queries import fetch_experiment_or_404
 from .validators import validate_csv_required_fields, validate_csv_upload
@@ -19,12 +20,49 @@ logger = logging.getLogger(__name__)
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
+def _normalize_question_metadata(
+    *,
+    experiment_type: ExperimentType,
+    row: dict[str, str | None],
+) -> tuple[str, str, str, str]:
+    gt_answer = row.get("gt_answer") or ""
+    options = row.get("options") or ""
+    question_type = row.get("question_type") or "MC"
+    metadata_raw = row.get("metadata") or "{}"
+
+    if experiment_type == ExperimentType.RATING:
+        return gt_answer, options, question_type, metadata_raw
+
+    try:
+        metadata = json.loads(metadata_raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="metadata must be valid JSON") from exc
+
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=400, detail="metadata must be a JSON object")
+
+    if "instructions" not in metadata:
+        metadata["instructions"] = ""
+
+    if experiment_type == ExperimentType.DELEGATION:
+        delegation_data = metadata.get("delegation_data")
+        if not isinstance(delegation_data, list):
+            raise HTTPException(
+                status_code=400,
+                detail="delegation experiments require metadata.delegation_data as an array",
+            )
+    else:
+        metadata.setdefault("delegation_data", [])
+
+    return "", "", experiment_type.value.upper(), json.dumps(metadata)
+
+
 async def upload_questions_csv(
     experiment_id: int,
     file: UploadFile,
     db: AsyncSession,
 ) -> dict[str, str]:
-    await fetch_experiment_or_404(experiment_id, db)
+    experiment = await fetch_experiment_or_404(experiment_id, db)
     validate_csv_upload(file)
 
     content_bytes = await file.read()
@@ -42,15 +80,19 @@ async def upload_questions_csv(
 
     for row in reader:
         validate_csv_required_fields(row, required_fields)
+        gt_answer, options, question_type, extra_data = _normalize_question_metadata(
+            experiment_type=experiment.experiment_type,
+            row=row,
+        )
         db.add(
             Question(
                 experiment_id=experiment_id,
                 question_id=row["question_id"],
                 question_text=row["question_text"],
-                gt_answer=row.get("gt_answer") or "",
-                options=row.get("options") or "",
-                question_type=row.get("question_type") or "MC",
-                extra_data=row.get("metadata") or "{}",
+                gt_answer=gt_answer,
+                options=options,
+                question_type=question_type,
+                extra_data=extra_data,
             )
         )
         questions_added += 1

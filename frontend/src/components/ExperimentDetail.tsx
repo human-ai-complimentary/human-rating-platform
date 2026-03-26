@@ -908,7 +908,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                     style={{ fontSize: '14px' }}
                   />
                   <div style={styles.hint}>
-                    Required: question_id, question_text. Optional: gt_answer, options, question_type, metadata
+                    Required: question_id, question_text. Optional: gt_answer, options, question_type, metadata. For chat/delegation, put task JSON in metadata.
                   </div>
                 </div>
                 <button

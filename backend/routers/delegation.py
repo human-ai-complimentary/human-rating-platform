@@ -10,8 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from database import get_session
-from models import Experiment, InteractionLog, Rater
-from questions import QUESTIONS
+from models import Experiment, InteractionLog, Question, Rater
 from routers.deps import RaterSession, require_rater_session
 from schemas import (
     ChatMessage,
@@ -24,7 +23,7 @@ from schemas import (
     SubtaskData,
 )
 from services.openai_client import get_chat_response
-from services.rater.queries import fetch_experiment_or_404, fetch_rater_or_404
+from services.rater.queries import fetch_experiment_or_404, fetch_question_or_404, fetch_rater_or_404
 from services.rater.validators import validate_rater_session_is_active
 
 logger = logging.getLogger(__name__)
@@ -40,6 +39,28 @@ class DelegationContext:
     task: dict
 
 
+def build_task_payload(question: Question) -> dict:
+    try:
+        metadata = json.loads(question.extra_data or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Invalid task metadata") from exc
+
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=500, detail="Invalid task metadata")
+
+    instructions = metadata.get("instructions") or ""
+    delegation_data = metadata.get("delegation_data") or []
+    if not isinstance(delegation_data, list):
+        raise HTTPException(status_code=500, detail="Invalid task metadata")
+
+    return {
+        "id": str(question.id),
+        "instructions": str(instructions),
+        "question": question.question_text,
+        "delegation_data": delegation_data,
+    }
+
+
 async def get_delegation_context(
     session: RaterSession = Depends(require_rater_session),
     db: AsyncSession = Depends(get_session),
@@ -52,9 +73,16 @@ async def get_delegation_context(
     if not task_id:
         raise HTTPException(status_code=403, detail="No delegation task assigned")
 
-    task = QUESTIONS.get(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+    try:
+        task_question_id = int(task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid delegation session") from exc
+
+    task_question = await fetch_question_or_404(task_question_id, db)
+    if task_question.experiment_id != experiment.id:
+        raise HTTPException(status_code=403, detail="Invalid delegation session")
+
+    task = build_task_payload(task_question)
 
     return DelegationContext(
         rater=rater,

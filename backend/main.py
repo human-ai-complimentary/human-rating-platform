@@ -13,7 +13,6 @@ from starlette.responses import Response
 
 from config import get_settings
 from database import build_database
-from questions import load_questions
 from routers import admin, raters
 from routers import delegation
 
@@ -62,7 +61,6 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        load_questions()
         await database.connect()
         app.state.database = database
         try:

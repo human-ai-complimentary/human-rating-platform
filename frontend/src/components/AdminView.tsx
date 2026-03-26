@@ -217,7 +217,7 @@ function AdminView() {
                   <option value="delegation">Delegation — raters review AI subtask answers</option>
                 </select>
                 <div style={styles.hint}>
-                  Chat and Delegation use the built-in question bank — no CSV upload needed.
+                  All experiment types use uploaded questions scoped to that experiment.
                 </div>
               </div>
               {newExperiment.experiment_type === 'rating' && (

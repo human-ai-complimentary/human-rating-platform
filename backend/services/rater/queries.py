@@ -32,6 +32,19 @@ async def fetch_question_or_404(question_id: int, db: AsyncSession) -> Question:
     return question
 
 
+async def fetch_delegation_question_ids_for_experiment(
+    *,
+    experiment_id: int,
+    db: AsyncSession,
+) -> list[int]:
+    return [
+        question_id
+        for (question_id,) in (
+            await db.execute(select(Question.id).where(Question.experiment_id == experiment_id))
+        ).all()
+    ]
+
+
 async def fetch_rated_question_ids(rater_id: int, db: AsyncSession) -> list[int]:
     return [
         question_id
