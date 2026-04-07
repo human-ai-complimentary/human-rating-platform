@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from config import ProlificMode
-from models import ExperimentType, ProlificStudyStatus
+from models import ExperimentType, ProlificStudyStatus, StepType
 
 
 # Delegation schemas
@@ -114,6 +114,8 @@ class ExperimentCreate(BaseModel):
     experiment_type: ExperimentType = ExperimentType.RATING
     prolific_completion_url: Optional[str] = None
     prolific: Optional[ProlificStudyConfig] = None
+    assistance_method: str = "none"
+    assistance_params: Optional[dict] = None
 
 
 class ExperimentResponse(BaseModel):
@@ -125,6 +127,7 @@ class ExperimentResponse(BaseModel):
     prolific_completion_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
+    assistance_method: str = "none"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -164,8 +167,26 @@ class RatingSubmit(BaseModel):
     answer: str
     confidence: int = Field(ge=1, le=5)
     time_started: datetime
+    assistance_session_id: Optional[int] = None
 
 
 class RatingResponse(BaseModel):
     id: int
     success: bool
+
+
+# Assistance schemas
+class AssistanceStartRequest(BaseModel):
+    question_id: int
+
+
+class AssistanceAdvanceRequest(BaseModel):
+    session_id: int
+    human_input: str
+
+
+class AssistanceStepResponse(BaseModel):
+    session_id: int
+    type: StepType
+    payload: dict
+    is_terminal: bool

@@ -5,10 +5,11 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import Settings
-from models import Rating, Rater
+from models import AssistanceSession, Rating, Rater
 from questions import get_random_task_id
 from schemas import (
     QuestionResponse,
@@ -177,6 +178,23 @@ async def submit_rating(
 
     validate_rating_confidence(payload.confidence)
 
+    if payload.assistance_session_id is not None:
+        assistance_session = (
+            await db.execute(
+                select(AssistanceSession).where(
+                    AssistanceSession.id == payload.assistance_session_id
+                )
+            )
+        ).scalar_one_or_none()
+        if (
+            assistance_session is None
+            or assistance_session.rater_id != rater_id
+            or assistance_session.question_id != payload.question_id
+        ):
+            raise HTTPException(
+                status_code=400, detail="Invalid assistance_session_id for this rater and question"
+            )
+
     db_rating = Rating(
         question_id=payload.question_id,
         rater_id=rater_id,
@@ -184,6 +202,7 @@ async def submit_rating(
         confidence=payload.confidence,
         time_started=_normalize_to_utc_aware(payload.time_started),
         time_submitted=datetime.now(UTC),
+        assistance_session_id=payload.assistance_session_id,
     )
     db.add(db_rating)
     await db.commit()
