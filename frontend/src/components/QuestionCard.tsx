@@ -50,6 +50,8 @@ function QuestionCard({ question, onSubmit, disabled = false, assistanceAnswer =
     }
   };
 
+  // Options may use '|' as delimiter (new format, supports options containing commas)
+  // or ',' (legacy format). Detect by presence of '|'.
   const options = question.options
     ? question.options.split(question.options.includes('|') ? '|' : ',').map(o => o.trim()).filter(o => o)
     : [];

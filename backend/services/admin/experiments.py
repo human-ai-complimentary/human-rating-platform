@@ -14,7 +14,11 @@ from .mappers import build_experiment_response
 from fastapi import HTTPException
 from .prolific import delete_study
 from services.assistance.registry import get_method
-from .queries import fetch_experiment_or_404, fetch_total_questions_for_experiment
+from .queries import (
+    fetch_experiment_or_404,
+    fetch_total_questions_for_experiment,
+    fetch_total_ratings_for_experiment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +110,16 @@ async def update_experiment(
 
     experiment = await fetch_experiment_or_404(experiment_id, db)
     experiment.assistance_method = payload.assistance_method
+    if payload.assistance_params is not None:
+        experiment.assistance_params = json.dumps(payload.assistance_params)
     await db.commit()
     await db.refresh(experiment)
 
     question_count = await fetch_total_questions_for_experiment(experiment_id, db)
-    return build_experiment_response(experiment, question_count=question_count, rating_count=0)
+    rating_count = await fetch_total_ratings_for_experiment(experiment_id, db)
+    return build_experiment_response(
+        experiment, question_count=question_count, rating_count=rating_count
+    )
 
 
 async def delete_experiment(

@@ -7,7 +7,10 @@ incorporating human answers each time, before synthesising a final answer.
 
 assistance_params:
     model:                LLM to use for decomposition (default: settings.llm.default_model)
-    confidence_model:     LLM to use for confidence scoring (default: gemini-2.0-flash-lite)
+    confidence_method:    "self_report" (default), "sampling", or "self_consistency"
+    confidence_model:     LLM for confidence scoring (default: gemini-2.5-flash-lite)
+    clustering_model:     LLM for semantic clustering, sampling method only (default: same as confidence_model)
+    num_samples:          Samples per subtask, sampling method only (default: 5)
     max_rounds:           Maximum delegation rounds before forced synthesis (default: 5)
     max_subtasks:         Max subtasks to identify per round (default: 5)
     confidence_threshold: Show AI answer pre-filled below this score (default: 75, range 0–100)
@@ -22,7 +25,12 @@ from config import get_settings
 from models import Question
 
 from ...base import AssistanceMethod, InteractionStep, StepType
-from ...confidence import ConfidenceEstimator, LLMConfidenceEstimator
+from ...confidence import (
+    ConfidenceEstimator,
+    LLMConfidenceEstimator,
+    SamplingConfidenceEstimator,
+    SelfConsistencyConfidenceEstimator,
+)
 from .decomposer import SubtaskDecomposer
 
 logger = logging.getLogger(__name__)
@@ -37,7 +45,7 @@ class HumanAsAToolMethod(AssistanceMethod):
 
     async def start(self, question: Question, params: dict) -> InteractionStep:
         settings = get_settings()
-        model = params.get("model") or settings.llm.default_model
+        model = params.get("model") or settings.llm.decomposition_model
         max_rounds = int(params.get("max_rounds", 5))
         max_subtasks = int(params.get("max_subtasks", 5))
         confidence_threshold = int(params.get("confidence_threshold", _CONFIDENCE_THRESHOLD))
@@ -69,6 +77,7 @@ class HumanAsAToolMethod(AssistanceMethod):
                 "iteration": 1,
                 "max_rounds": max_rounds,
                 "confidence_threshold": confidence_threshold,
+                "history": [],
             },
             state={
                 "question_text": question_text,
@@ -85,13 +94,18 @@ class HumanAsAToolMethod(AssistanceMethod):
 
     async def advance(self, state: dict, human_input: str, params: dict) -> InteractionStep:
         settings = get_settings()
-        model = state.get("model") or params.get("model") or settings.llm.default_model
+        model = state.get("model") or params.get("model") or settings.llm.decomposition_model
 
         try:
-            answers: dict[str, str] = json.loads(human_input)
+            raw_input: dict = json.loads(human_input)
         except json.JSONDecodeError:
             logger.warning("Failed to parse human_input as JSON: %r", human_input)
-            answers = {}
+            raw_input = {}
+
+        # Normalize: values can be plain strings (legacy) or {answer, confidence} dicts
+        answers: dict[str, dict] = {
+            k: v if isinstance(v, dict) else {"answer": str(v)} for k, v in raw_input.items()
+        }
 
         iteration = state.get("iteration", 1)
         max_rounds = state.get("max_rounds", 5)
@@ -106,7 +120,9 @@ class HumanAsAToolMethod(AssistanceMethod):
         ]
 
         result = await self._decomposer.advance(
-            question_text, options, history,
+            question_text,
+            options,
+            history,
             iteration=iteration,
             max_rounds=max_rounds,
             model=model,
@@ -134,6 +150,7 @@ class HumanAsAToolMethod(AssistanceMethod):
                 "iteration": iteration + 1,
                 "max_rounds": max_rounds,
                 "confidence_threshold": confidence_threshold,
+                "history": history,
             },
             state={
                 "question_text": question_text,
@@ -151,8 +168,24 @@ class HumanAsAToolMethod(AssistanceMethod):
     def _get_estimator(self, params: dict) -> ConfidenceEstimator:
         if self._estimator is not None:
             return self._estimator
-        confidence_model = params.get("confidence_model") or None
-        return LLMConfidenceEstimator(model=confidence_model)
+        settings = get_settings()
+        method = params.get("confidence_method", "self_report")
+        confidence_model = params.get("confidence_model") or settings.llm.confidence_model
+        if method == "sampling":
+            estimator: ConfidenceEstimator = SamplingConfidenceEstimator(
+                sampling_model=confidence_model,
+                clustering_model=params.get("clustering_model") or confidence_model,
+                num_samples=int(params.get("num_samples", 5)),
+            )
+        elif method == "self_consistency":
+            estimator = SelfConsistencyConfidenceEstimator(
+                sampling_model=confidence_model,
+                num_samples=int(params.get("num_samples", 5)),
+            )
+        else:
+            estimator = LLMConfidenceEstimator(model=confidence_model)
+        self._estimator = estimator
+        return estimator
 
     async def _score_subtasks(
         self, question_text: str, subtasks: list[dict], params: dict

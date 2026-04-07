@@ -111,9 +111,25 @@ class ProlificSettings(_StrictModel):
         return self.mode != ProlificMode.DISABLED
 
 
+class LLMModels:
+    CLAUDE_SONNET = "openrouter/anthropic/claude-sonnet-4-6"
+    CLAUDE_HAIKU = "openrouter/anthropic/claude-haiku-4-5"
+    GPT_4O = "openrouter/openai/gpt-4o"
+    GPT_4O_MINI = "openrouter/openai/gpt-4o-mini"
+    GEMINI_3_FLASH_PREVIEW = "openrouter/google/gemini-3-flash-preview"
+    GEMINI_FLASH = "openrouter/google/gemini-2.0-flash"
+    GEMINI_FLASH_LITE = "openrouter/google/gemini-2.5-flash-lite"
+    LLAMA_70B = "openrouter/meta-llama/llama-3.3-70b-instruct"
+
+
 class LLMSettings(_StrictModel):
-    default_model: str = "openrouter/anthropic/claude-sonnet-4-6"
+    default_model: str = LLMModels.CLAUDE_SONNET
+    decomposition_model: str = LLMModels.GEMINI_3_FLASH_PREVIEW
+    confidence_model: str = LLMModels.GEMINI_FLASH_LITE
     openrouter_api_key: str = ""
+    max_tokens: int = 4096
+    request_timeout: int = 60
+    max_retries: int = 2
 
 
 class Settings(BaseSettings):

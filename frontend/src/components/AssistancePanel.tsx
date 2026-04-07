@@ -7,17 +7,20 @@ interface AssistancePanelProps {
   questionId: number;
   onSessionId: (sessionId: number) => void;
   onStepChange: (step: AssistanceStep | null) => void;
-  onConfidence?: (confidence: number) => void;
 }
 
 function SubtaskInput({
   subtask,
   value,
+  confidence,
   onChange,
+  onConfidenceChange,
 }: {
   subtask: Subtask;
   value: string;
+  confidence: number;
   onChange: (value: string) => void;
+  onConfidenceChange: (value: number) => void;
 }) {
   const styles = {
     prompt: {
@@ -133,17 +136,34 @@ function SubtaskInput({
           <span style={styles.sliderValue}>{value || '3'}/5</span>
         </div>
       )}
+      <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #eee' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+          <span style={{ fontSize: '12px', color: '#888' }}>Your confidence</span>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: '#4a90d9' }}>{confidence}/5</span>
+        </div>
+        <input
+          type="range"
+          min="1"
+          max="5"
+          value={confidence}
+          onChange={e => onConfidenceChange(parseInt(e.target.value))}
+          style={{ width: '100%', accentColor: '#4a90d9', margin: 0 }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#bbb', marginTop: '2px' }}>
+          <span>Not confident</span>
+          <span>Very confident</span>
+        </div>
+      </div>
     </div>
   );
 }
 
-function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, onConfidence }: AssistancePanelProps) {
+function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange }: AssistancePanelProps) {
   const [step, setStep] = useState<AssistanceStep | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, { answer: string; confidence: number }>>({});
   const [error, setError] = useState<string | null>(null);
-  const [confidence, setConfidence] = useState(3);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +171,6 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
     setStep(null);
     setAnswers({});
     setError(null);
-    setConfidence(3);
     onStepChange(null);
 
     api
@@ -179,21 +198,17 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
     const subtasks = step?.payload?.subtasks ?? [];
     if (subtasks.length === 0) return;
     const threshold: number = step?.payload?.confidence_threshold ?? 75;
-    console.group('[AssistancePanel] prefill — threshold:', threshold);
-    const prefilled: Record<number, string> = {};
+    const prefilled: Record<number, { answer: string; confidence: number }> = {};
     for (const st of subtasks) {
-      const willPrefill = !!(st.my_answer && st.confidence !== undefined && st.confidence >= threshold);
-      if (willPrefill) {
-        prefilled[st.index] = st.my_answer!;
+      if (st.my_answer && st.confidence !== undefined && st.confidence >= threshold) {
+        prefilled[st.index] = {
+          answer: st.my_answer!,
+          confidence: Math.max(1, Math.round(st.confidence / 20)),
+        };
       }
-      console.log(
-        `  subtask ${st.index}: confidence=${st.confidence} my_answer=${JSON.stringify(st.my_answer)} → ${willPrefill ? `PREFILLED as ${JSON.stringify(prefilled[st.index])}` : 'left blank'}`
-      );
     }
-    console.log('  prefilled indices:', Object.keys(prefilled));
-    console.groupEnd();
     setAnswers(prefilled);
-  }, [step?.payload?.subtasks]);
+  }, [step?.payload?.subtasks, step?.payload?.confidence_threshold]);
 
   const handleSubmit = async () => {
     if (!step) return;
@@ -214,7 +229,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
     subtasks.length > 0 &&
     subtasks.every(st => {
       const val = answers[st.index];
-      return val !== undefined && val !== '';
+      return val !== undefined && val.answer !== '';
     });
 
   const styles = {
@@ -428,7 +443,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
             round.subtasks.map(st => (
               <div key={`${ri}-${st.index}`} style={styles.answeredRow}>
                 <span style={styles.answeredPrompt}>{st.question}</span>
-                <span style={styles.answeredValue}>{round.answers[String(st.index)] ?? '—'}</span>
+                <span style={styles.answeredValue}>{round.answers[String(st.index)]?.answer ?? '—'}</span>
               </div>
             ))
           )}
@@ -460,7 +475,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
               round.subtasks.map(st => (
                 <div key={`${ri}-${st.index}`} style={{ ...styles.answeredRow, opacity: 0.7 }}>
                   <span style={styles.answeredPrompt}>{st.question}</span>
-                  <span style={styles.answeredValue}>{round.answers[String(st.index)] ?? '—'}</span>
+                  <span style={styles.answeredValue}>{round.answers[String(st.index)]?.answer ?? '—'}</span>
                 </div>
               ))
             )}
@@ -473,33 +488,13 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange, 
             <div style={styles.subtaskNumber}>{st.index + 1} of {subtasks.length}</div>
             <SubtaskInput
               subtask={st}
-              value={answers[st.index] ?? ''}
-              onChange={val => setAnswers(prev => ({ ...prev, [st.index]: val }))}
+              value={answers[st.index]?.answer ?? ''}
+              confidence={answers[st.index]?.confidence ?? 3}
+              onChange={val => setAnswers(prev => ({ ...prev, [st.index]: { ...prev[st.index] ?? { confidence: 3 }, answer: val } }))}
+              onConfidenceChange={val => setAnswers(prev => ({ ...prev, [st.index]: { ...prev[st.index] ?? { answer: '' }, confidence: val } }))}
             />
           </div>
         ))}
-        <div style={styles.confidenceSection}>
-          <div style={styles.confidenceHeader}>
-            <span style={styles.confidenceTitle}>How confident are you in these answers?</span>
-            <span style={styles.confidenceValue}>{confidence}/5</span>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={confidence}
-            onChange={e => {
-              const v = parseInt(e.target.value);
-              setConfidence(v);
-              onConfidence?.(v);
-            }}
-            style={{ width: '100%', accentColor: '#4a90d9', margin: 0 }}
-          />
-          <div style={styles.confidenceLabels}>
-            <span>Not confident</span>
-            <span>Very confident</span>
-          </div>
-        </div>
         <button
           style={styles.submitBtn(allAnswered && !submitting)}
           disabled={!allAnswered || submitting}

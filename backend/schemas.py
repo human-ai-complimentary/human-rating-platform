@@ -82,6 +82,7 @@ class ExperimentResponse(BaseModel):
 
 class ExperimentUpdate(BaseModel):
     assistance_method: str
+    assistance_params: Optional[dict] = None
 
 
 # Question schemas

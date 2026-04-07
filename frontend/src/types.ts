@@ -7,6 +7,7 @@ export interface Experiment {
   question_count: number;
   rating_count: number;
   assistance_method: string;
+  assistance_params: Record<string, unknown> | null;
 }
 
 export interface Question {
@@ -75,7 +76,7 @@ export interface AssistanceStep {
     iteration?: number;
     max_rounds?: number;
     confidence_threshold?: number;
-    history?: Array<{ subtasks: Subtask[]; answers: Record<string, string> }>;
+    history?: Array<{ subtasks: Subtask[]; answers: Record<string, { answer: string; confidence?: number }> }>;
     synthesis?: { answer: string; reasoning: string } | null;
   };
 }

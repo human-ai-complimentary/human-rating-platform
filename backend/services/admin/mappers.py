@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from models import Experiment, Question, Rating, Rater, Upload
@@ -23,6 +24,9 @@ def build_experiment_response(
         question_count=question_count,
         rating_count=rating_count,
         assistance_method=experiment.assistance_method,
+        assistance_params=json.loads(experiment.assistance_params)
+        if experiment.assistance_params
+        else None,
     )
 
 

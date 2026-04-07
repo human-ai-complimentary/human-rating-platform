@@ -78,9 +78,7 @@ async def start_session(
                 await db.delete(rating)
             for session in (
                 await db.execute(
-                    select(AssistanceSession).where(
-                        AssistanceSession.rater_id == existing_rater.id
-                    )
+                    select(AssistanceSession).where(AssistanceSession.rater_id == existing_rater.id)
                 )
             ).scalars():
                 await db.delete(session)

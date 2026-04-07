@@ -9,64 +9,15 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
-from config import get_settings
+from config import LLMSettings, get_settings
 
 from ...llm import complete
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "openrouter/google/gemini-3.1-flash-lite-preview"
-
-# ---------------------------------------------------------------------------
-# Structured output schema
-# ---------------------------------------------------------------------------
-
-# Enforces the response shape at the API level for models that support it
-# (Gemini, GPT-4o). _normalize_subtasks() remains as a backstop for models
-# that don't enforce per-field enum constraints.
-_RESPONSE_FORMAT: dict = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "decomposition_response",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "done": {"type": "boolean"},
-                "synthesis": {
-                    "type": "object",
-                    "properties": {
-                        "answer": {"type": "string"},
-                        "reasoning": {"type": "string"},
-                    },
-                    "required": ["answer", "reasoning"],
-                },
-                "subtasks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "index": {"type": "integer"},
-                            "question": {"type": "string"},
-                            "my_answer": {"type": "string"},
-                            "type": {
-                                "type": "string",
-                                "enum": ["binary", "multiple_choice", "free_text"],
-                            },
-                            "options": {
-                                "type": ["array", "null"],
-                                "items": {"type": "string"},
-                            },
-                        },
-                        "required": ["index", "question", "my_answer", "type", "options"],
-                    },
-                },
-            },
-            "required": ["done"],
-        },
-    },
-}
 
 # ---------------------------------------------------------------------------
 # Prompts
@@ -79,16 +30,16 @@ Subtask schema:
   "question": "<atomic sub-question>",
   "type": "binary" | "multiple_choice" | "free_text",
   "options": ["opt1", "opt2", ...] | null,
-  "my_answer": <see rules below>
+  "my_answer": <see rules below>,
+  "my_answer_index": <see rules below>
 }}
 
-my_answer rules — follow exactly, no exceptions:
-- binary:          exactly "yes" or "no" (lowercase, nothing else)
-- multiple_choice: copy one option string exactly as it appears in "options", nothing else
-- free_text:       a concise answer, no explanation or qualification appended
+my_answer / my_answer_index rules — follow exactly, no exceptions:
+- binary:          my_answer = exactly "yes" or "no" (lowercase). my_answer_index = null.
+- multiple_choice: my_answer_index = 0-based index of your chosen option in "options". my_answer = "".
+- free_text:       my_answer = a concise answer, no explanation appended. my_answer_index = null.
 
-The human sees my_answer as a pre-filled response. It must be a value the UI \
-can use directly — extra text will break the interface.\
+The human sees my_answer as a pre-filled response. It must be usable by the UI directly.\
 """
 
 _START_SYSTEM = """\
@@ -116,18 +67,21 @@ Always respond with:
 
 _ADVANCE_SYSTEM = """\
 You are working toward answering a question across multiple rounds. Each round \
-you either synthesise a final answer or identify additional sub-questions still needed.
+you either synthesise a final answer or decompose remaining uncertainty into new sub-questions.
 
 This is round {iteration} of {max_rounds} maximum.{forced_note}
 
-The human has provided answers to your previous sub-questions. Use all of that \
-information to update your understanding, then decide:
+The human has reviewed and corrected your previous sub-question answers. \
+Incorporate their input and decide:
 
-1. If you now have enough to answer the original question:
+1. If you now have enough information to answer the original question:
    {{"done": true, "synthesis": {{"answer": "<answer>", "reasoning": "<step-by-step explanation>"}}}}
 
-2. If there are still sub-questions required that have not been answered:
-   {{"done": false, "subtasks": [/* new subtask objects only — do not repeat already-answered ones */]}}
+2. If there is still remaining uncertainty that the human can help resolve — \
+decompose it into new atomic sub-questions, exactly as you did in the first round. \
+For each new sub-question, provide your best current answer regardless of confidence. \
+Do not repeat sub-questions that have already been addressed.
+   {{"done": false, "subtasks": [/* new subtask objects only */]}}
 
 {subtask_schema}
 
@@ -137,6 +91,13 @@ Respond with JSON only — no explanation, no markdown fences.\
 _FORCED_NOTE = (
     " This is the final round — you MUST synthesise now regardless of remaining uncertainty."
 )
+
+_FALLBACK_SYNTHESIS_SYSTEM = """\
+Based on the information gathered so far, provide your best answer to the question.
+
+Respond with JSON only — no explanation, no markdown fences:
+{{"answer": "<your best answer>", "reasoning": "<step-by-step explanation>"}}\
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +122,13 @@ def format_history(history: list[dict]) -> str:
     for i, round_ in enumerate(history, 1):
         lines.append(f"Round {i}:")
         for st in round_["subtasks"]:
-            human_answer = round_["answers"].get(str(st["index"]), "(no answer)")
+            raw = round_["answers"].get(str(st["index"]), "(no answer)")
+            if isinstance(raw, dict):
+                ans_str = raw.get("answer") or "(no answer)"
+                conf = raw.get("confidence")
+                human_answer = f"{ans_str} (confidence: {conf}/5)" if conf is not None else ans_str
+            else:
+                human_answer = raw
             lines.append(f"  Uncertainty: {st['question']}")
             lines.append(f"  My answer:   {st.get('my_answer', '(none)')}")
             lines.append(f"  Human input: {human_answer}")
@@ -178,8 +145,9 @@ def _build_user_msg(question_text: str, options: str, history: list[dict] | None
 
 
 def _parse_response(raw: str, context: str) -> dict:
+    content = re.sub(r"```json?\n?|```\n?", "", raw).strip()
     try:
-        return json.loads(raw)
+        return json.loads(content)
     except (json.JSONDecodeError, AttributeError):
         logger.warning("Failed to parse %s response: %r", context, raw)
         return {}
@@ -211,13 +179,12 @@ def _normalize_subtasks(subtasks: list[dict]) -> list[dict]:
 
         elif stype == "multiple_choice":
             options: list[str] = st.get("options") or []
-            lower = answer.lower()
-            match = next((o for o in options if lower.startswith(o.lower())), None)
-            if match:
-                answer = match
+            idx = st.get("my_answer_index")
+            if isinstance(idx, int) and 0 <= idx < len(options):
+                answer = options[idx]
             else:
                 logger.warning(
-                    "multiple_choice my_answer %r does not match any option %r", answer, options
+                    "multiple_choice my_answer_index %r is invalid for options %r", idx, options
                 )
 
         normalized.append({**st, "my_answer": answer})
@@ -238,17 +205,13 @@ class SubtaskDecomposer:
         model: str | None = None,
     ) -> DecompositionResult:
         settings = get_settings()
-        model = model or _DEFAULT_MODEL
-        system = _START_SYSTEM.format(
-            subtask_schema=_SUBTASK_SCHEMA, max_subtasks=max_subtasks
-        )
+        system = _START_SYSTEM.format(subtask_schema=_SUBTASK_SCHEMA, max_subtasks=max_subtasks)
         user_msg = _build_user_msg(question_text, options)
 
         raw = await complete(
             [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
             model=model,
             settings=settings.llm,
-            response_format=_RESPONSE_FORMAT,
         )
 
         parsed = _parse_response(raw, "start")
@@ -273,11 +236,9 @@ class SubtaskDecomposer:
         iteration: int,
         max_rounds: int,
         model: str | None = None,
-        force_synthesis: bool = False,
     ) -> DecompositionResult:
         settings = get_settings()
-        model = model or _DEFAULT_MODEL
-        is_final = force_synthesis or iteration >= max_rounds
+        is_final = iteration >= max_rounds
         forced_note = _FORCED_NOTE if is_final else ""
 
         system = _ADVANCE_SYSTEM.format(
@@ -292,19 +253,54 @@ class SubtaskDecomposer:
             [{"role": "system", "content": system}, {"role": "user", "content": user_msg}],
             model=model,
             settings=settings.llm,
-            response_format=_RESPONSE_FORMAT,
         )
 
         parsed = _parse_response(raw, "advance")
         if not parsed:
-            parsed = {"done": True, "synthesis": {"answer": raw, "reasoning": ""}}
+            logger.error("advance() received unparseable LLM response: %r", raw[:200])
+            raise RuntimeError("LLM returned an unparseable response")
 
         if parsed.get("done") or is_final:
-            return DecompositionResult(done=True, synthesis=parsed.get("synthesis", {}))
+            synthesis = parsed.get("synthesis") or {}
+            if not synthesis.get("answer"):
+                logger.warning(
+                    "advance() forced synthesis but LLM omitted it; making fallback call"
+                )
+                synthesis = await self._fallback_synthesize(
+                    question_text, options, history, model, settings.llm
+                )
+            return DecompositionResult(done=True, synthesis=synthesis)
 
         subtasks = _normalize_subtasks(parsed.get("subtasks", []))
         if not subtasks:
             logger.warning("advance() returned done=false with no subtasks; forcing synthesis")
-            return DecompositionResult(done=True)
+            synthesis = await self._fallback_synthesize(
+                question_text, options, history, model, settings.llm
+            )
+            return DecompositionResult(done=True, synthesis=synthesis)
 
         return DecompositionResult(done=False, subtasks=subtasks)
+
+    async def _fallback_synthesize(
+        self,
+        question_text: str,
+        options: str,
+        history: list[dict],
+        model: str,
+        llm_settings: LLMSettings,
+    ) -> dict:
+        """Make a dedicated synthesis call when the LLM failed to include one."""
+        user_msg = _build_user_msg(question_text, options, history)
+        raw = await complete(
+            [
+                {"role": "system", "content": _FALLBACK_SYNTHESIS_SYSTEM},
+                {"role": "user", "content": user_msg},
+            ],
+            model=model,
+            settings=llm_settings,
+        )
+        result = _parse_response(raw, "fallback_synthesis")
+        if not result or not result.get("answer"):
+            logger.error("Fallback synthesis also failed: %r", raw[:200])
+            return {"answer": "", "reasoning": ""}
+        return result

@@ -151,7 +151,9 @@ async def update_experiment(
     payload: ExperimentUpdate,
     db: AsyncSession = Depends(get_session),
 ):
-    return await admin_service.update_experiment(experiment_id=experiment_id, payload=payload, db=db)
+    return await admin_service.update_experiment(
+        experiment_id=experiment_id, payload=payload, db=db
+    )
 
 
 @secure_router.delete("/experiments/{experiment_id}")

@@ -11,6 +11,8 @@ If no model is passed, settings.llm.default_model is used.
 
 from __future__ import annotations
 
+import functools
+
 import openai
 
 from config import LLMSettings
@@ -20,14 +22,14 @@ Message = dict[str, str]  # {"role": "user"|"assistant"|"system", "content": "..
 _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-class Models:
-    CLAUDE_SONNET = "openrouter/anthropic/claude-sonnet-4-6"
-    CLAUDE_HAIKU = "openrouter/anthropic/claude-haiku-4-5"
-    GPT_4O = "openrouter/openai/gpt-4o"
-    GPT_4O_MINI = "openrouter/openai/gpt-4o-mini"
-    GEMINI_FLASH = "openrouter/google/gemini-2.0-flash"
-    GEMINI_FLASH_LITE = "openrouter/google/gemini-3.1-flash-lite-preview"
-    LLAMA_70B = "openrouter/meta-llama/llama-3.3-70b-instruct"
+@functools.lru_cache(maxsize=4)
+def _get_client(api_key: str, timeout: int, max_retries: int) -> openai.AsyncOpenAI:
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=_OPENROUTER_BASE_URL,
+        timeout=timeout,
+        max_retries=max_retries,
+    )
 
 
 def _parse_model(model: str) -> str:
@@ -46,6 +48,7 @@ async def complete(
     settings: LLMSettings,
     model: str | None = None,
     response_format: dict | None = None,
+    temperature: float | None = None,
 ) -> str:
     """Send a chat completion request via OpenRouter and return the response text.
 
@@ -63,12 +66,13 @@ async def complete(
         raise RuntimeError("LLM__OPENROUTER_API_KEY is not set.")
 
     model_id = _parse_model(model or settings.default_model)
-    client = openai.AsyncOpenAI(
-        api_key=settings.openrouter_api_key,
-        base_url=_OPENROUTER_BASE_URL,
+    client = _get_client(
+        settings.openrouter_api_key, settings.request_timeout, settings.max_retries
     )
-    kwargs: dict = {"model": model_id, "messages": messages, "max_tokens": 1024}  # type: ignore[assignment]
+    kwargs: dict = {"model": model_id, "messages": messages, "max_tokens": settings.max_tokens}  # type: ignore[assignment]
     if response_format is not None:
         kwargs["response_format"] = response_format
+    if temperature is not None:
+        kwargs["temperature"] = temperature
     response = await client.chat.completions.create(**kwargs)  # type: ignore[arg-type]
     return response.choices[0].message.content or ""

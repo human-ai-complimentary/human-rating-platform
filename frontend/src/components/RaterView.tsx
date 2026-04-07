@@ -107,8 +107,6 @@ function RaterView() {
   const [allDone, setAllDone] = useState(false);
   const [assistanceSessionId, setAssistanceSessionId] = useState<number | null>(null);
   const [assistanceStep, setAssistanceStep] = useState<AssistanceStep | null>(null);
-  const [subtaskConfidence, setSubtaskConfidence] = useState(3);
-  const questionStartedAtRef = useRef(new Date().toISOString());
 
   const experimentId = searchParams.get('experiment_id');
   const prolificId = searchParams.get('PROLIFIC_PID');
@@ -288,21 +286,11 @@ function RaterView() {
     }
   };
 
-  // Reset per-question state when question changes
-  useEffect(() => {
-    if (question) {
-      questionStartedAtRef.current = new Date().toISOString();
-      setSubtaskConfidence(3);
-    }
-  }, [question?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleSessionExpired = () => {
+const handleSessionExpired = () => {
     setSessionExpired(true);
   };
 
   const hasAssistance = session?.assistance_method && session.assistance_method !== 'none';
-  const assistanceStepDone = assistanceStep?.type === 'complete' || assistanceStep?.type === 'none';
-  const assistanceReady = !hasAssistance || assistanceStepDone;
   // Collapse to single column when assistance returned 'none' (LLM decided no help needed)
 
   const styles = {
@@ -497,7 +485,6 @@ function RaterView() {
             questionId={question.id}
             onSessionId={setAssistanceSessionId}
             onStepChange={setAssistanceStep}
-            onConfidence={setSubtaskConfidence}
           />
         </div>
       ) : (
