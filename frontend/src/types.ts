@@ -1,8 +1,11 @@
+export type ExperimentType = 'rating' | 'chat' | 'delegation';
+
 export interface Experiment {
   id: number;
   name: string;
   created_at: string;
   num_ratings_per_question: number;
+  experiment_type: ExperimentType;
   prolific_completion_url: string | null;
   question_count: number;
   rating_count: number;
@@ -38,6 +41,8 @@ export interface Session {
   session_end_time: string;
   experiment_name: string;
   completion_url: string | null;
+  experiment_type: ExperimentType;
+  delegation_task_id: string | null;
   rater_session_token: string;
 }
 
@@ -98,8 +103,30 @@ export interface PlatformStatus {
 export interface ExperimentCreate {
   name: string;
   num_ratings_per_question: number;
+  experiment_type: ExperimentType;
   prolific_completion_url: string;
   prolific?: ProlificStudyConfig;
+}
+
+export interface SubtaskData {
+  id: number;
+  description: string;
+  ai_answer: string;
+  ai_reasoning: string;
+  ai_confidence: number;
+  needs_human_input: boolean;
+}
+
+export interface DelegationTask {
+  id: string;
+  instructions: string;
+  question: string;
+  delegation_data: SubtaskData[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface ExperimentRound {

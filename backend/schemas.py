@@ -4,7 +4,57 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from config import ProlificMode
-from models import ProlificStudyStatus, StepType
+from models import ExperimentType, ProlificStudyStatus, StepType
+
+
+# Delegation schemas
+
+class SubtaskData(BaseModel):
+    id: int
+    description: str
+    ai_answer: str
+    ai_reasoning: str
+    ai_confidence: float
+    needs_human_input: bool = False
+
+
+class DelegationTaskResponse(BaseModel):
+    id: str
+    instructions: str
+    question: str
+    delegation_data: list[SubtaskData]
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    pid: str
+    task_id: str
+    experiment_id: int
+    message_history: list[ChatMessage]
+
+
+class ChatResponse(BaseModel):
+    ai_message: str
+
+
+class ChatHistoryResponse(BaseModel):
+    messages: list[ChatMessage]
+
+
+class DelegationSubmit(BaseModel):
+    pid: str
+    task_id: str
+    experiment_id: int
+    subtask_inputs: dict[str, str]
+
+
+class DelegationSubmitResponse(BaseModel):
+    status: str
+    message: str = "Your answers have been successfully submitted."
 
 
 # Prolific schemas
@@ -61,6 +111,7 @@ class PlatformStatus(BaseModel):
 class ExperimentCreate(BaseModel):
     name: str
     num_ratings_per_question: int = 3
+    experiment_type: ExperimentType = ExperimentType.RATING
     prolific_completion_url: Optional[str] = None
     prolific: Optional[ProlificStudyConfig] = None
     assistance_method: str = "none"
@@ -72,6 +123,7 @@ class ExperimentResponse(BaseModel):
     name: str
     created_at: datetime
     num_ratings_per_question: int
+    experiment_type: ExperimentType = ExperimentType.RATING
     prolific_completion_url: Optional[str] = None
     question_count: int = 0
     rating_count: int = 0
@@ -98,6 +150,8 @@ class RaterStartResponse(BaseModel):
     session_end_time: datetime
     experiment_name: str
     completion_url: Optional[str] = None
+    experiment_type: ExperimentType = ExperimentType.RATING
+    delegation_task_id: Optional[str] = None
     rater_session_token: str
 
 

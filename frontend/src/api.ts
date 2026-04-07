@@ -6,6 +6,8 @@
 
 import type {
   Analytics,
+  ChatMessage,
+  DelegationTask,
   ExperimentRound,
   Experiment,
   ExperimentCreate,
@@ -81,6 +83,12 @@ const routes = {
     submit: '/raters/submit',
     sessionStatus: '/raters/session-status',
     endSession: '/raters/end-session',
+  },
+  delegation: {
+    task: (taskId: string) => `/delegation/task/${taskId}`,
+    chatHistory: '/delegation/chat-history',
+    chat: '/delegation/chat',
+    submit: '/delegation/submit',
   },
 } as const;
 
@@ -274,6 +282,10 @@ export const api = {
     return requestJson<Experiment[]>(routes.admin.experiments);
   },
 
+  async getExperiment(experimentId: number): Promise<Experiment> {
+    return requestJson<Experiment>(routes.admin.experiment(experimentId));
+  },
+
   async uploadQuestions(experimentId: number, file: File): Promise<MessageResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -424,6 +436,48 @@ export const api = {
     return requestJson<MessageResponse>(routes.rater.endSession, {
       method: 'POST',
       headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  // ── Delegation ───────────────────────────────────────────────────────────
+
+  async getDelegationTask(taskId: string, sessionToken: string): Promise<DelegationTask> {
+    return requestJson<DelegationTask>(routes.delegation.task(taskId), {
+      headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  async getChatHistory(sessionToken: string): Promise<{ messages: ChatMessage[] }> {
+    return requestJson<{ messages: ChatMessage[] }>(routes.delegation.chatHistory, {
+      headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  async sendChatMessage(
+    sessionToken: string,
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    messageHistory: ChatMessage[]
+  ): Promise<{ ai_message: string }> {
+    return requestJson<{ ai_message: string }>(routes.delegation.chat, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { pid, task_id: taskId, experiment_id: experimentId, message_history: messageHistory },
+    });
+  },
+
+  async submitDelegation(
+    sessionToken: string,
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    subtaskInputs: Record<string, string>
+  ): Promise<{ status: string; message: string }> {
+    return requestJson<{ status: string; message: string }>(routes.delegation.submit, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { pid, task_id: taskId, experiment_id: experimentId, subtask_inputs: subtaskInputs },
     });
   },
 };

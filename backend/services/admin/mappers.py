@@ -19,6 +19,7 @@ def build_experiment_response(
         name=experiment.name,
         created_at=experiment.created_at,
         num_ratings_per_question=experiment.num_ratings_per_question,
+        experiment_type=experiment.experiment_type,
         prolific_completion_url=experiment.prolific_completion_url,
         question_count=question_count,
         rating_count=rating_count,
