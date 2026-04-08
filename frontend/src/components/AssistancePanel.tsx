@@ -423,7 +423,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange }
 
   if (step.type === 'complete') {
     const synthesis = step.payload.synthesis;
-    const completedHistory: Array<{ subtasks: Subtask[]; answers: Record<string, string> }> =
+    const completedHistory: Array<{ subtasks: Subtask[]; answers: Record<string, { answer: string; confidence?: number }> }> =
       step.payload.history ?? [];
     return (
       <div style={styles.panel}>
@@ -455,7 +455,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange }
   // ask_input state
   const iteration = step?.payload?.iteration ?? 1;
   const maxRounds = step?.payload?.max_rounds ?? 5;
-  const history: Array<{ subtasks: Subtask[]; answers: Record<string, string> }> =
+  const history: Array<{ subtasks: Subtask[]; answers: Record<string, { answer: string; confidence?: number }> }> =
     step?.payload?.history ?? [];
 
   return (
