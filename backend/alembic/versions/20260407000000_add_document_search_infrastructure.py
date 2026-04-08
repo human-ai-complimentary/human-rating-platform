@@ -1,7 +1,7 @@
 """add_document_search_infrastructure
 
 Revision ID: 20260407000000
-Revises: 20260318000000
+Revises: 20260318000000, 20260324120000
 Create Date: 2026-04-07 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20260407000000"
-down_revision: Union[str, Sequence[str], None] = "20260318000000"
+down_revision: Union[str, Sequence[str], None] = ("20260318000000", "20260324120000")
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
