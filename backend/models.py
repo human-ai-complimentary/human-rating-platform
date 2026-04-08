@@ -20,7 +20,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
+    text as sa_text,
 )
 from sqlmodel import Field, SQLModel
 
@@ -37,6 +37,14 @@ class ProlificStudyStatus(str, Enum):
     PAUSED = "PAUSED"
     AWAITING_REVIEW = "AWAITING_REVIEW"
     COMPLETED = "COMPLETED"
+
+
+class ExperimentType(str, Enum):
+    """Experiment interaction mode."""
+
+    RATING = "rating"
+    CHAT = "chat"
+    DELEGATION = "delegation"
 
 
 class StepType(str, Enum):
@@ -58,12 +66,16 @@ class Experiment(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
+    )
+    experiment_type: ExperimentType = Field(
+        default=ExperimentType.RATING,
+        sa_column=Column(String(16), nullable=False, server_default=sa_text("'rating'")),
     )
     num_ratings_per_question: int = Field(
         default=3,
-        sa_column=Column(Integer, nullable=False, server_default=text("3")),
+        sa_column=Column(Integer, nullable=False, server_default=sa_text("3")),
     )
     prolific_completion_url: Optional[str] = Field(
         default=None,
@@ -71,7 +83,7 @@ class Experiment(SQLModel, table=True):
     )
     assistance_method: str = Field(
         default="none",
-        sa_column=Column(String(64), nullable=False, server_default=text("'none'")),
+        sa_column=Column(String(64), nullable=False, server_default=sa_text("'none'")),
     )
     assistance_params: Optional[str] = Field(
         default=None,
@@ -96,7 +108,7 @@ class Question(SQLModel, table=True):
     options: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     question_type: str = Field(
         default="MC",
-        sa_column=Column(String(16), nullable=False, server_default=text("'MC'")),
+        sa_column=Column(String(16), nullable=False, server_default=sa_text("'MC'")),
     )
     extra_data: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
@@ -133,7 +145,7 @@ class Rater(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
     session_end: Optional[datetime] = Field(
@@ -142,11 +154,15 @@ class Rater(SQLModel, table=True):
     )
     is_active: bool = Field(
         default=True,
-        sa_column=Column(Boolean, nullable=False, server_default=text("true")),
+        sa_column=Column(Boolean, nullable=False, server_default=sa_text("true")),
     )
     is_preview: bool = Field(
         default=False,
-        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+        sa_column=Column(Boolean, nullable=False, server_default=sa_text("false")),
+    )
+    delegation_task_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(64), nullable=True),
     )
 
 
@@ -191,7 +207,7 @@ class Rating(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
 
@@ -207,7 +223,6 @@ class ExperimentRound(SQLModel, table=True):
             name="uq_experiment_round_number",
         ),
     )
-
     id: Optional[int] = Field(default=None, primary_key=True)
     experiment_id: int = Field(
         sa_column=Column(
@@ -233,9 +248,37 @@ class ExperimentRound(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
+
+
+class InteractionLog(SQLModel, table=True):
+    """Logs chat messages and delegation submissions for non-rating experiments."""
+
+    __tablename__ = "interaction_logs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=sa_text("CURRENT_TIMESTAMP"),
+        ),
+    )
+    prolific_pid: str = Field(sa_column=Column(String(64), nullable=False))
+    experiment_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiments.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    task_id: str = Field(sa_column=Column(String(64), nullable=False))
+    condition: str = Field(sa_column=Column(String(16), nullable=False))
+    interaction_type: str = Field(sa_column=Column(String(32), nullable=False))
+    payload: str = Field(sa_column=Column(Text, nullable=False))
 
 
 class Upload(SQLModel, table=True):
@@ -255,10 +298,77 @@ class Upload(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
     question_count: int = Field(sa_column=Column(Integer, nullable=False))
+
+
+class ExperimentDocument(SQLModel, table=True):
+    __tablename__ = "experiment_documents"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    experiment_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiments.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    title: str = Field(sa_column=Column(String(255), nullable=False))
+    source_filename: str = Field(sa_column=Column(String(512), nullable=False))
+    content_type: str = Field(sa_column=Column(String(128), nullable=False))
+    chunk_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default=sa_text("0")),
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=sa_text("CURRENT_TIMESTAMP"),
+        ),
+    )
+
+
+class ExperimentDocumentChunk(SQLModel, table=True):
+    __tablename__ = "experiment_document_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "chunk_index",
+            name="uq_experiment_document_chunk_index",
+        ),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    document_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiment_documents.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    experiment_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("experiments.id", ondelete="CASCADE"),
+            nullable=False,
+        )
+    )
+    chunk_index: int = Field(sa_column=Column(Integer, nullable=False))
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    char_start: int = Field(sa_column=Column(Integer, nullable=False))
+    char_end: int = Field(sa_column=Column(Integer, nullable=False))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=sa_text("CURRENT_TIMESTAMP"),
+        ),
+    )
 
 
 class AssistanceSession(SQLModel, table=True):
@@ -314,7 +424,7 @@ class AssistanceSession(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
     updated_at: datetime = Field(
@@ -322,10 +432,10 @@ class AssistanceSession(SQLModel, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-            server_default=text("CURRENT_TIMESTAMP"),
+            server_default=sa_text("CURRENT_TIMESTAMP"),
         ),
     )
     is_complete: bool = Field(
         default=False,
-        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
+        sa_column=Column(Boolean, nullable=False, server_default=sa_text("false")),
     )

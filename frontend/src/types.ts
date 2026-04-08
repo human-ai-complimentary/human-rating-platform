@@ -1,8 +1,11 @@
+export type ExperimentType = 'rating' | 'chat' | 'delegation';
+
 export interface Experiment {
   id: number;
   name: string;
   created_at: string;
   num_ratings_per_question: number;
+  experiment_type: ExperimentType;
   prolific_completion_url: string | null;
   question_count: number;
   rating_count: number;
@@ -32,12 +35,57 @@ export interface Upload {
   question_count: number;
 }
 
+export interface ExperimentDocument {
+  id: number;
+  title: string;
+  source_filename: string;
+  chunk_count: number;
+  created_at: string;
+}
+
+export interface ExperimentDocumentChunk {
+  id: number;
+  chunk_index: number;
+  text: string;
+  char_start: number;
+  char_end: number;
+}
+
+export interface ExperimentDocumentPage {
+  document_id: number;
+  title: string;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  total_chunks: number;
+  chunks: ExperimentDocumentChunk[];
+}
+
+export interface ExperimentDocumentSearchResult {
+  chunk_id: number;
+  document_id: number;
+  document_title: string;
+  chunk_index: number;
+  score: number;
+  text: string;
+  char_start: number;
+  char_end: number;
+}
+
+export interface ExperimentDocumentSearchResponse {
+  query: string;
+  mode: 'lexical' | 'semantic' | 'hybrid';
+  results: ExperimentDocumentSearchResult[];
+}
+
 export interface Session {
   rater_id: number;
   session_start: string;
   session_end_time: string;
   experiment_name: string;
   completion_url: string | null;
+  experiment_type: ExperimentType;
+  delegation_task_id: string | null;
   rater_session_token: string;
 }
 
@@ -98,8 +146,30 @@ export interface PlatformStatus {
 export interface ExperimentCreate {
   name: string;
   num_ratings_per_question: number;
+  experiment_type: ExperimentType;
   prolific_completion_url: string;
   prolific?: ProlificStudyConfig;
+}
+
+export interface SubtaskData {
+  id: number;
+  description: string;
+  ai_answer: string;
+  ai_reasoning: string;
+  ai_confidence: number;
+  needs_human_input: boolean;
+}
+
+export interface DelegationTask {
+  id: string;
+  instructions: string;
+  question: string;
+  delegation_data: SubtaskData[];
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface ExperimentRound {

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import get_settings
 from models import Experiment, ExperimentRound, Question, Rating, Rater
 from schemas import ExperimentCreate, ExperimentResponse
+from services.documents import delete_experiment_documents
 from .mappers import build_experiment_response
 from fastapi import HTTPException
 from .prolific import delete_study
@@ -31,6 +32,7 @@ async def create_experiment(
     db_experiment = Experiment(
         name=payload.name,
         num_ratings_per_question=payload.num_ratings_per_question,
+        experiment_type=payload.experiment_type,
         prolific_completion_url=payload.prolific_completion_url,
         assistance_method=payload.assistance_method,
         assistance_params=json.dumps(payload.assistance_params)
@@ -94,6 +96,28 @@ async def list_experiments(
     ]
 
 
+async def get_experiment(
+    experiment_id: int,
+    db: AsyncSession,
+) -> ExperimentResponse:
+    experiment = await fetch_experiment_or_404(experiment_id, db)
+
+    question_count = await fetch_total_questions_for_experiment(experiment_id, db)
+    rating_count = (
+        await db.execute(
+            select(func.count(Rating.id))
+            .join(Question, Rating.question_id == Question.id)
+            .where(Question.experiment_id == experiment_id)
+        )
+    ).scalar_one()
+
+    return build_experiment_response(
+        experiment,
+        question_count=question_count,
+        rating_count=int(rating_count or 0),
+    )
+
+
 async def delete_experiment(
     experiment_id: int,
     db: AsyncSession,
@@ -126,6 +150,12 @@ async def delete_experiment(
                     "Failed to delete Prolific study %s (continuing with local delete)",
                     study_id,
                 )
+
+    await delete_experiment_documents(
+        experiment_id=experiment_id,
+        db=db,
+        settings=settings,
+    )
 
     await db.delete(experiment)
     await db.commit()

@@ -6,6 +6,11 @@
 
 import type {
   Analytics,
+  ChatMessage,
+  DelegationTask,
+  ExperimentDocument,
+  ExperimentDocumentPage,
+  ExperimentDocumentSearchResponse,
   ExperimentRound,
   Experiment,
   ExperimentCreate,
@@ -60,6 +65,8 @@ const routes = {
     experiments: '/admin/experiments',
     experiment: (id: number) => `/admin/experiments/${id}`,
     upload: (id: number) => `/admin/experiments/${id}/upload`,
+    uploadDocument: (id: number) => `/admin/experiments/${id}/documents/upload`,
+    documents: (id: number) => `/admin/experiments/${id}/documents`,
     uploads: (id: number) => `/admin/experiments/${id}/uploads`,
     stats: (id: number) => `/admin/experiments/${id}/stats`,
     analytics: (id: number) => `/admin/experiments/${id}/analytics`,
@@ -78,9 +85,18 @@ const routes = {
   rater: {
     start: '/raters/start',
     nextQuestion: '/raters/next-question',
+    documents: '/raters/documents',
+    documentPage: (documentId: number) => `/raters/documents/${documentId}/page`,
+    documentSearch: '/raters/documents/search',
     submit: '/raters/submit',
     sessionStatus: '/raters/session-status',
     endSession: '/raters/end-session',
+  },
+  delegation: {
+    task: (taskId: string) => `/delegation/task/${taskId}`,
+    chatHistory: '/delegation/chat-history',
+    chat: '/delegation/chat',
+    submit: '/delegation/submit',
   },
 } as const;
 
@@ -274,11 +290,25 @@ export const api = {
     return requestJson<Experiment[]>(routes.admin.experiments);
   },
 
+  async getExperiment(experimentId: number): Promise<Experiment> {
+    return requestJson<Experiment>(routes.admin.experiment(experimentId));
+  },
+
   async uploadQuestions(experimentId: number, file: File): Promise<MessageResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
     return requestJson<MessageResponse>(routes.admin.upload(experimentId), {
+      method: 'POST',
+      formData,
+    });
+  },
+
+  async uploadDocument(experimentId: number, file: File): Promise<MessageResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return requestJson<MessageResponse>(routes.admin.uploadDocument(experimentId), {
       method: 'POST',
       formData,
     });
@@ -304,6 +334,10 @@ export const api = {
 
   async listUploads(experimentId: number): Promise<Upload[]> {
     return requestJson<Upload[]>(routes.admin.uploads(experimentId));
+  },
+
+  async listDocuments(experimentId: number): Promise<ExperimentDocument[]> {
+    return requestJson<ExperimentDocument[]>(routes.admin.documents(experimentId));
   },
 
   async deleteExperiment(experimentId: number): Promise<MessageResponse> {
@@ -406,6 +440,46 @@ export const api = {
     return parseJson<Question | null>(response, url);
   },
 
+  async listRaterDocuments(sessionToken: string, questionId: number): Promise<ExperimentDocument[]> {
+    return requestJson<ExperimentDocument[]>(routes.rater.documents, {
+      headers: { 'X-Rater-Session': sessionToken },
+      query: { question_id: questionId },
+    });
+  },
+
+  async getRaterDocumentPage(
+    sessionToken: string,
+    questionId: number,
+    documentId: number,
+    page: number,
+    pageSize: number
+  ): Promise<ExperimentDocumentPage> {
+    return requestJson<ExperimentDocumentPage>(routes.rater.documentPage(documentId), {
+      headers: { 'X-Rater-Session': sessionToken },
+      query: { question_id: questionId, page, page_size: pageSize },
+    });
+  },
+
+  async searchRaterDocuments(
+    sessionToken: string,
+    questionId: number,
+    documentId: number | null,
+    query: string,
+    mode: 'lexical' | 'semantic' | 'hybrid',
+    limit: number = 8
+  ): Promise<ExperimentDocumentSearchResponse> {
+    return requestJson<ExperimentDocumentSearchResponse>(routes.rater.documentSearch, {
+      headers: { 'X-Rater-Session': sessionToken },
+      query: {
+        question_id: questionId,
+        ...(documentId !== null ? { document_id: documentId } : {}),
+        q: query,
+        mode,
+        limit,
+      },
+    });
+  },
+
   async submitRating(sessionToken: string, data: RatingSubmit): Promise<SubmitRatingResponse> {
     return requestJson<SubmitRatingResponse>(routes.rater.submit, {
       method: 'POST',
@@ -424,6 +498,48 @@ export const api = {
     return requestJson<MessageResponse>(routes.rater.endSession, {
       method: 'POST',
       headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  // ── Delegation ───────────────────────────────────────────────────────────
+
+  async getDelegationTask(taskId: string, sessionToken: string): Promise<DelegationTask> {
+    return requestJson<DelegationTask>(routes.delegation.task(taskId), {
+      headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  async getChatHistory(sessionToken: string): Promise<{ messages: ChatMessage[] }> {
+    return requestJson<{ messages: ChatMessage[] }>(routes.delegation.chatHistory, {
+      headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  async sendChatMessage(
+    sessionToken: string,
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    messageHistory: ChatMessage[]
+  ): Promise<{ ai_message: string }> {
+    return requestJson<{ ai_message: string }>(routes.delegation.chat, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { pid, task_id: taskId, experiment_id: experimentId, message_history: messageHistory },
+    });
+  },
+
+  async submitDelegation(
+    sessionToken: string,
+    pid: string,
+    taskId: string,
+    experimentId: number,
+    subtaskInputs: Record<string, string>
+  ): Promise<{ status: string; message: string }> {
+    return requestJson<{ status: string; message: string }>(routes.delegation.submit, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { pid, task_id: taskId, experiment_id: experimentId, subtask_inputs: subtaskInputs },
     });
   },
 };

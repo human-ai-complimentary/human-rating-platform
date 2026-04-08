@@ -13,6 +13,7 @@ function AdminView() {
   const [newExperiment, setNewExperiment] = useState<ExperimentCreate>({
     name: '',
     num_ratings_per_question: 3,
+    experiment_type: 'rating',
     prolific_completion_url: '',
   });
 
@@ -42,6 +43,7 @@ function AdminView() {
       setNewExperiment({
         name: '',
         num_ratings_per_question: 3,
+        experiment_type: 'rating',
         prolific_completion_url: '',
       });
       navigate(`/admin/experiments/${created.id}`);
@@ -204,7 +206,23 @@ function AdminView() {
                 />
               </div>
               <div style={styles.inputGroup}>
-                <label htmlFor="ratings-per-question" style={styles.label}>Ratings per Question</label>
+                <label style={styles.label}>Experiment Type</label>
+                <select
+                  value={newExperiment.experiment_type}
+                  onChange={(e) => setNewExperiment({ ...newExperiment, experiment_type: e.target.value as 'rating' | 'chat' | 'delegation' })}
+                  style={styles.input}
+                >
+                  <option value="rating">Rating — raters answer uploaded questions</option>
+                  <option value="chat">Chat — raters chat with AI about a question</option>
+                  <option value="delegation">Delegation — raters review AI subtask answers</option>
+                </select>
+                <div style={styles.hint}>
+                  Chat and Delegation use the built-in question bank — no CSV upload needed.
+                </div>
+              </div>
+              {newExperiment.experiment_type === 'rating' && (
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Ratings per Question</label>
                 <input
                   id="ratings-per-question"
                   data-testid="ratings-per-question-input"
@@ -217,6 +235,7 @@ function AdminView() {
                 />
                 <div style={styles.hint}>How many different raters should evaluate each question.</div>
               </div>
+              )}
               <div style={{ marginBottom: '16px', padding: '12px', background: '#f0f7ff', borderRadius: '6px', fontSize: '13px', color: '#555' }}>
                 After creating the experiment and uploading questions, use the Prolific section to run a pilot study and launch rating rounds.
               </div>
@@ -251,6 +270,16 @@ function AdminView() {
                   <div>
                     <div style={styles.experimentName}>{exp.name}</div>
                     <div style={styles.experimentMeta}>
+                      <span style={{
+                        background: exp.experiment_type === 'rating' ? '#e3f2fd' : '#f3e8ff',
+                        color: exp.experiment_type === 'rating' ? '#1565c0' : '#6b21a8',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        marginRight: '6px',
+                        textTransform: 'uppercase',
+                      }}>{exp.experiment_type}</span>
                       {exp.question_count} questions · {exp.rating_count} ratings
                     </div>
                   </div>
