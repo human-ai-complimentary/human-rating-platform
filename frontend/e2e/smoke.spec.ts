@@ -36,6 +36,23 @@ type RecommendationRecord = {
   is_complete: boolean;
 };
 
+type RaterSessionRecord = {
+  rater_id: number;
+  session_start: string;
+  session_end_time: string;
+  experiment_name: string;
+  completion_url: string | null;
+  rater_session_token: string;
+};
+
+type RaterQuestionRecord = {
+  id: number;
+  question_id: string;
+  question_text: string;
+  options: string | null;
+  question_type: string;
+};
+
 type MockState = {
   experiments: ExperimentRecord[];
   uploads: Record<number, UploadRecord[]>;
@@ -43,7 +60,11 @@ type MockState = {
   recommendations: Record<number, RecommendationRecord>;
   statsRequests: string[];
   recommendationRequests: string[];
+  startRequests: string[];
   previewStartRequests: string[];
+  nextQuestionSessionTokens: string[];
+  sessionsByExperimentId: Record<number, RaterSessionRecord>;
+  questionsBySessionToken: Record<string, RaterQuestionRecord>;
   nextExperimentId: number;
   nextUploadId: number;
   nextRoundId: number;
@@ -70,7 +91,11 @@ function createMockState(): MockState {
     recommendations: {},
     statsRequests: [],
     recommendationRequests: [],
+    startRequests: [],
     previewStartRequests: [],
+    nextQuestionSessionTokens: [],
+    sessionsByExperimentId: {},
+    questionsBySessionToken: {},
     nextExperimentId: 1,
     nextUploadId: 1,
     nextRoundId: 1,
@@ -305,25 +330,41 @@ async function installApiMocks(
     }
 
     if (pathname === '/api/raters/start' && method === 'POST') {
+      state.startRequests.push(search);
       state.previewStartRequests.push(search);
+      const experimentId = Number(url.searchParams.get('experiment_id') || '0');
+      const experiment = state.experiments.find((item) => item.id === experimentId);
+      const session =
+        state.sessionsByExperimentId[experimentId] || {
+          rater_id: 101,
+          session_start: '2026-03-09T00:02:00Z',
+          session_end_time: '2099-03-09T01:02:00Z',
+          experiment_name: experiment?.name ?? 'Smoke Test Experiment',
+          completion_url:
+            experiment?.prolific_completion_url ??
+            'https://app.prolific.com/submissions/complete?cc=TEST1234',
+          rater_session_token: `token-exp-${experimentId || 'default'}`,
+        };
       await fulfillJson(route, 200, {
-        rater_id: 101,
-        session_start: '2026-03-09T00:02:00Z',
-        session_end_time: '2099-03-09T01:02:00Z',
-        experiment_name: 'Smoke Test Experiment',
-        completion_url: 'https://app.prolific.com/submissions/complete?cc=TEST1234',
+        ...session,
       });
       return;
     }
 
     if (pathname === '/api/raters/next-question' && method === 'GET') {
-      await fulfillJson(route, 200, {
-        id: 500,
-        question_id: 'q-1',
-        question_text: 'Is this workflow ready for release?',
-        options: 'Yes|No',
-        question_type: 'MC',
-      });
+      const sessionToken = request.headers()['x-rater-session'] || '';
+      state.nextQuestionSessionTokens.push(sessionToken);
+      await fulfillJson(
+        route,
+        200,
+        state.questionsBySessionToken[sessionToken] || {
+          id: 500,
+          question_id: 'q-1',
+          question_text: 'Is this workflow ready for release?',
+          options: 'Yes|No',
+          question_type: 'MC',
+        }
+      );
       return;
     }
 
@@ -455,10 +496,103 @@ test('preview participant link opens /rate with preview mode and starts one prev
 
   await expect(popup).toHaveURL(/preview=true/);
   await expect(popup.getByText('Preview mode')).toBeVisible();
-  await expect(popup.getByText('Smoke Test Experiment')).toBeVisible();
+  await expect(popup.getByText('Preview Experiment')).toBeVisible();
   await expect(popup.getByText('Is this workflow ready for release?')).toBeVisible();
   await expect.poll(() => state.previewStartRequests.length).toBe(1);
   await expect(state.previewStartRequests[0]).toContain('preview=true');
+});
+
+test('rater ignores a stored session from another experiment and starts a fresh one', async ({ page }) => {
+  const state = createMockState();
+  state.experiments = [
+    buildExperiment(state, {
+      id: 1,
+      name: 'Old Experiment',
+      question_count: 1,
+      prolific_completion_url: 'https://app.prolific.com/submissions/complete?cc=OLD1111',
+    }),
+    buildExperiment(state, {
+      id: 2,
+      name: 'Fresh Experiment',
+      question_count: 1,
+      prolific_completion_url: 'https://app.prolific.com/submissions/complete?cc=NEW2222',
+    }),
+  ];
+  state.nextExperimentId = 3;
+  state.uploads[1] = [];
+  state.uploads[2] = [];
+  state.rounds[1] = [];
+  state.rounds[2] = [];
+  state.recommendations[1] = {
+    avg_time_per_question_seconds: 0,
+    remaining_rating_actions: 0,
+    total_hours_remaining: 0,
+    recommended_places: 0,
+    is_complete: false,
+  };
+  state.recommendations[2] = {
+    avg_time_per_question_seconds: 0,
+    remaining_rating_actions: 0,
+    total_hours_remaining: 0,
+    recommended_places: 0,
+    is_complete: false,
+  };
+  state.sessionsByExperimentId[2] = {
+    rater_id: 202,
+    session_start: '2026-03-09T00:05:00Z',
+    session_end_time: '2099-03-09T01:05:00Z',
+    experiment_name: 'Fresh Experiment',
+    completion_url: 'https://app.prolific.com/submissions/complete?cc=NEW2222',
+    rater_session_token: 'token-exp-2',
+  };
+  state.questionsBySessionToken['token-exp-1'] = {
+    id: 501,
+    question_id: 'old-q',
+    question_text: 'Old experiment question',
+    options: 'Yes,No',
+    question_type: 'MC',
+  };
+  state.questionsBySessionToken['token-exp-2'] = {
+    id: 502,
+    question_id: 'fresh-q',
+    question_text: 'Fresh experiment question',
+    options: 'Yes,No',
+    question_type: 'MC',
+  };
+
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem(
+      'hrp_rater_session',
+      JSON.stringify({
+        experimentId: '1',
+        session: {
+          rater_id: 101,
+          session_start: '2026-03-09T00:00:00Z',
+          session_end_time: '2099-03-09T01:00:00Z',
+          experiment_name: 'Old Experiment',
+          completion_url: 'https://app.prolific.com/submissions/complete?cc=OLD1111',
+          rater_session_token: 'token-exp-1',
+        },
+      })
+    );
+  });
+
+  await installApiMocks(page, state);
+  await page.goto('/rate?experiment_id=2&PROLIFIC_PID=pid-2&STUDY_ID=study-2&SESSION_ID=session-2');
+
+  await expect(page.getByRole('heading', { name: 'Fresh Experiment' })).toBeVisible();
+  await expect(page.getByText('Fresh experiment question')).toBeVisible();
+  await expect(page.getByText('Old experiment question')).toHaveCount(0);
+  await expect.poll(() => state.startRequests.length).toBe(1);
+  await expect(state.startRequests[0]).toContain('experiment_id=2');
+  await expect.poll(() => state.nextQuestionSessionTokens[0]).toBe('token-exp-2');
+
+  const persistedSession = await page.evaluate(() => {
+    const stored = window.sessionStorage.getItem('hrp_rater_session');
+    return stored ? JSON.parse(stored) : null;
+  });
+  expect(persistedSession.experimentId).toBe('2');
+  expect(persistedSession.session.rater_session_token).toBe('token-exp-2');
 });
 
 test('disabled mode explains why pilot controls are unavailable', async ({ page }) => {

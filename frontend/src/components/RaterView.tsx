@@ -1,12 +1,100 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Timer from './Timer';
 import QuestionCard from './QuestionCard';
 import type { Session, Question } from '../types';
 
+const STORAGE_KEY = 'hrp_rater_session';
+
+type SessionPayload = Omit<Session, 'rater_session_token'> & {
+  rater_session_token?: string;
+};
+
+type StoredSession = {
+  experimentId?: string;
+  session: Session;
+  token: string;
+};
+
+type ProlificSessionParams = {
+  experimentId: string;
+  prolificId: string;
+  studyId: string;
+  sessionId: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSessionPayload(value: unknown): value is SessionPayload {
+  return (
+    isRecord(value) &&
+    typeof value.rater_id === 'number' &&
+    typeof value.session_start === 'string' &&
+    typeof value.session_end_time === 'string' &&
+    typeof value.experiment_name === 'string' &&
+    (value.completion_url === null || typeof value.completion_url === 'string') &&
+    (value.rater_session_token === undefined || typeof value.rater_session_token === 'string')
+  );
+}
+
+function parseStoredSession(raw: string): StoredSession | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || !isSessionPayload(parsed.session)) {
+      return null;
+    }
+
+    const token =
+      parsed.session.rater_session_token ??
+      (typeof parsed.token === 'string' ? parsed.token : null);
+    if (!token) {
+      return null;
+    }
+
+    return {
+      experimentId: typeof parsed.experimentId === 'string' ? parsed.experimentId : undefined,
+      session: { ...parsed.session, rater_session_token: token },
+      token,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function canResumeStoredSession(
+  storedSession: StoredSession,
+  currentExperimentId: string | null
+): boolean {
+  if (!currentExperimentId) {
+    return true;
+  }
+
+  return storedSession.experimentId === currentExperimentId;
+}
+
+function getProlificSessionParams(params: {
+  experimentId: string | null;
+  prolificId: string | null;
+  studyId: string | null;
+  sessionId: string | null;
+}): ProlificSessionParams | null {
+  const { experimentId, prolificId, studyId, sessionId } = params;
+  if (!experimentId || !prolificId || !studyId || !sessionId) {
+    return null;
+  }
+
+  return {
+    experimentId,
+    prolificId,
+    studyId,
+    sessionId,
+  };
+}
+
 function RaterView() {
-  const STORAGE_KEY = 'hrp_rater_session';
   const [searchParams] = useSearchParams();
   const [session, setSession] = useState<Session | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
@@ -22,14 +110,38 @@ function RaterView() {
   const studyId = searchParams.get('STUDY_ID');
   const sessionId = searchParams.get('SESSION_ID');
   const isPreview = searchParams.get('preview') === 'true';
+  const prolificSessionParams = useMemo(
+    () => getProlificSessionParams({ experimentId, prolificId, studyId, sessionId }),
+    [experimentId, prolificId, studyId, sessionId]
+  );
 
-  const loadNextQuestion = useCallback(async (token: string) => {
+  const clearStoredSession = useCallback(() => {
     try {
-      setLoading(true);
+      sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Ignore storage failures (private mode, quota, etc.)
+    }
+  }, []);
+
+  const persistSession = useCallback((nextSession: Session) => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ session: nextSession, experimentId })
+      );
+    } catch {
+      // Ignore storage failures (private mode, quota, etc.)
+    }
+  }, [experimentId]);
+
+  const fetchNextQuestion = useCallback(async (token: string) => {
+    try {
       const q = await api.getNextQuestion(token);
       if (q === null || (typeof q === 'object' && Object.keys(q).length === 0)) {
         setAllDone(true);
+        setQuestion(null);
       } else {
+        setAllDone(false);
         setQuestion(q);
       }
     } catch (err) {
@@ -38,44 +150,76 @@ function RaterView() {
       } else {
         setError(err instanceof Error ? err.message : 'Unknown error');
       }
+    }
+  }, []);
+
+  const loadNextQuestion = useCallback(async (token: string) => {
+    setLoading(true);
+    try {
+      await fetchNextQuestion(token);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchNextQuestion]);
+
+  const restoreStoredSession = useCallback(async (storedSession: StoredSession) => {
+    setSession(storedSession.session);
+    setSessionToken(storedSession.token);
+    setLoading(true);
+
+    try {
+      const [status] = await Promise.all([
+        api.getSessionStatus(storedSession.token).catch(() => null),
+        fetchNextQuestion(storedSession.token),
+      ]);
+
+      if (status) {
+        setQuestionsCompleted(status.questions_completed);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchNextQuestion]);
+
+  const startRaterSession = useCallback(async (params: ProlificSessionParams) => {
+    try {
+      const nextSession = await api.startSession(
+        params.experimentId,
+        params.prolificId,
+        params.studyId,
+        params.sessionId,
+        isPreview
+      );
+      setSession(nextSession);
+      setSessionToken(nextSession.rater_session_token);
+      persistSession(nextSession);
+      await loadNextQuestion(nextSession.rater_session_token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setLoading(false);
+    }
+  }, [isPreview, persistSession, loadNextQuestion]);
 
   const startedRef = useRef(false);
 
   useEffect(() => {
-    // Resume path: if we have a stored session, restore it and skip param checks
-    const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored && !startedRef.current) {
-      startedRef.current = true;
-      try {
-        const parsed = JSON.parse(stored) as { session: Session } | { token: string; session: Session };
-        const sess = 'session' in parsed ? parsed.session : null;
-        const token = (sess && (sess as any).rater_session_token) || ('token' in parsed ? (parsed as any).token : null);
-        if (sess && token) {
-          setSession(sess);
-          setSessionToken(token);
-          setLoading(true);
-          // Hydrate progress and question in parallel
-          Promise.all([
-            api
-              .getSessionStatus(token)
-              .then(s => setQuestionsCompleted(s.questions_completed))
-              .catch(() => {}),
-            loadNextQuestion(token),
-          ]).finally(() => setLoading(false));
-          return;
-        }
-      } catch {
-        // Corrupt storage; clear and continue to normal flow
-        sessionStorage.removeItem(STORAGE_KEY);
+    if (startedRef.current) {
+      return;
+    }
+
+    const rawStoredSession = sessionStorage.getItem(STORAGE_KEY);
+    if (rawStoredSession) {
+      const storedSession = parseStoredSession(rawStoredSession);
+      if (!storedSession) {
+        clearStoredSession();
+      } else if (canResumeStoredSession(storedSession, experimentId)) {
+        startedRef.current = true;
+        void restoreStoredSession(storedSession);
+        return;
       }
     }
 
-    // Normal start flow: require Prolific params
-    if (!experimentId || !prolificId || !studyId || !sessionId) {
+    if (!prolificSessionParams) {
       setError('Please access this study from Prolific.');
       setLoading(false);
       return;
@@ -83,41 +227,22 @@ function RaterView() {
 
     // Prevent React StrictMode double-mount from firing two concurrent
     // startSession requests, which causes a unique constraint violation.
-    if (startedRef.current) return;
     startedRef.current = true;
-
-    api
-      .startSession(experimentId, prolificId, studyId, sessionId, isPreview)
-      .then(data => {
-        setSession(data);
-        setSessionToken(data.rater_session_token);
-        // Persist session so a refresh can resume without Prolific params
-        try {
-          sessionStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify({ session: data })
-          );
-        } catch {
-          // Ignore storage failures (private mode, quota, etc.)
-        }
-        return loadNextQuestion(data.rater_session_token);
-      })
-      .catch(err => {
-        setError(err.message);
-        setLoading(false);
-      });
-  }, [experimentId, prolificId, studyId, sessionId, isPreview, loadNextQuestion]);
+    void startRaterSession(prolificSessionParams);
+  }, [
+    experimentId,
+    prolificSessionParams,
+    startRaterSession,
+    restoreStoredSession,
+    clearStoredSession,
+  ]);
 
   useEffect(() => {
     if (!(sessionExpired || allDone)) return;
     const completionUrl = session?.completion_url;
 
     // Clear persisted session once we're done or expired (always)
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    clearStoredSession();
 
     if (!completionUrl) return;
 
@@ -125,7 +250,7 @@ function RaterView() {
       window.location.href = completionUrl;
     }, 3000);
     return () => clearTimeout(timer);
-  }, [sessionExpired, allDone, session?.completion_url]);
+  }, [sessionExpired, allDone, session?.completion_url, clearStoredSession]);
 
   const handleSubmit = async (answer: string, confidence: number, timeStarted: string) => {
     if (!session || !question || !sessionToken) return;
