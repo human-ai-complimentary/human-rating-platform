@@ -257,7 +257,12 @@ class SubtaskDecomposer:
 
         parsed = _parse_response(raw, "advance")
         if not parsed:
-            logger.error("advance() received unparseable LLM response: %r", raw[:200])
+            logger.error(
+                "advance() received unparseable LLM response: iteration=%s, history_rounds=%s, raw=%r",
+                iteration,
+                len(history),
+                raw[:200],
+            )
             raise RuntimeError("LLM returned an unparseable response")
 
         if parsed.get("done") or is_final:

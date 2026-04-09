@@ -290,6 +290,13 @@ const handleSessionExpired = () => {
     setSessionExpired(true);
   };
 
+  // Auto-skip question when decomposition fails mid-session — question stays unrated and may reappear
+  useEffect(() => {
+    if (assistanceStep?.type === 'skip' && sessionToken) {
+      void loadNextQuestion(sessionToken);
+    }
+  }, [assistanceStep?.type, sessionToken, loadNextQuestion]);
+
   const hasAssistance = session?.assistance_method && session.assistance_method !== 'none';
   // Collapse to single column when assistance returned 'none' (LLM decided no help needed)
 

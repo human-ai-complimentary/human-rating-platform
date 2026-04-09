@@ -97,7 +97,7 @@ async def start_assistance(
         )
         return _step_to_response(existing.id, step)
 
-    if existing and existing.step_type == StepType.NONE:
+    if existing and existing.step_type in (StepType.NONE, StepType.SKIP):
         await db.delete(existing)
         await db.commit()
 
@@ -173,7 +173,18 @@ async def advance_assistance(
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    step = await method.advance(state, human_input, params)
+    try:
+        step = await method.advance(state, human_input, params)
+    except RuntimeError:
+        logger.error(
+            "Assistance advance failed with unrecoverable error: session_id=%s, rater_id=%s, "
+            "question_id=%s, method=%s — skipping question for retry",
+            session_id,
+            rater_id,
+            assistance_session.question_id,
+            assistance_session.method_name,
+        )
+        step = InteractionStep(type=StepType.SKIP, is_terminal=True)
 
     _apply_step_to_session(assistance_session, step)
     await db.commit()

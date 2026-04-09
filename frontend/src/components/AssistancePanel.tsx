@@ -419,7 +419,7 @@ function AssistancePanel({ sessionToken, questionId, onSessionId, onStepChange }
     );
   }
 
-  if (!step || step.type === 'none') return null;
+  if (!step || step.type === 'none' || step.type === 'skip') return null;
 
   if (step.type === 'complete') {
     const synthesis = step.payload.synthesis;

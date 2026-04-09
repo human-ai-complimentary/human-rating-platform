@@ -65,7 +65,7 @@ export interface Subtask {
   options: string[] | null;
 }
 
-export type AssistanceStepType = 'none' | 'display' | 'ask_input' | 'complete';
+export type AssistanceStepType = 'none' | 'display' | 'ask_input' | 'complete' | 'skip';
 
 export interface AssistanceStep {
   session_id: number;
