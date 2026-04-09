@@ -14,7 +14,7 @@ test different approaches and compare their effect on rating quality.
     class HintMethod(AssistanceMethod):
         async def start(self, question: Question, params: dict) -> InteractionStep:
             hint = await generate_hint(question.question_text, params)
-            return InteractionStep(type=StepType.DISPLAY, content={"hint": hint}, is_terminal=True)
+            return InteractionStep(type=StepType.DISPLAY, payload={"hint": hint}, is_terminal=True)
 
 3. Register it here:
 
@@ -74,10 +74,12 @@ What is expected to evolve:
 from __future__ import annotations
 
 from .base import AssistanceMethod
+from .methods.human_as_a_tool import HumanAsAToolMethod
 from .methods.none import NoAssistance
 
 _REGISTRY: dict[str, type[AssistanceMethod]] = {
     "none": NoAssistance,
+    "human_as_a_tool": HumanAsAToolMethod,
 }
 
 

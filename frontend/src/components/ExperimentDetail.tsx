@@ -47,14 +47,18 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   });
 
   // TODO: When the methods team provides assistance methods for experimentation, we should add them here.
-  // TODO: Load these from experiment settings in the backend
-  // TODO: Save changes to backend when toggled
   const [assistanceMethods, setAssistanceMethods] = useState<AssistanceMethods>({
     searchResults: false,
     selectedEvidence: false,
     aiConfidence: false,
     aiChatAssistant: false,
   });
+  const [humanAsATool, setHumanAsATool] = useState(
+    experiment.assistance_method === 'human_as_a_tool'
+  );
+  const [confidenceMethod, setConfidenceMethod] = useState<string>(
+    (experiment.assistance_params?.confidence_method as string) ?? 'self_report'
+  );
 
   const handleAssistanceToggle = (method: keyof AssistanceMethods) => {
     // TODO: Implement API call to save assistance method settings
@@ -65,6 +69,36 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     }));
     setSuccess('Assistance method updated (not yet saved to backend)');
     setTimeout(() => setSuccess(null), 2000);
+  };
+
+  const handleHumanAsAToolToggle = async () => {
+    const next = !humanAsATool;
+    const method = next ? 'human_as_a_tool' : 'none';
+    try {
+      await api.updateExperiment(experiment.id, {
+        assistance_method: method,
+        assistance_params: next ? { confidence_method: confidenceMethod } : undefined,
+      });
+      setHumanAsATool(next);
+      setSuccess(`Human-as-a-tool ${next ? 'enabled' : 'disabled'}`);
+      setTimeout(() => setSuccess(null), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update assistance method');
+    }
+  };
+
+  const handleConfidenceMethodChange = async (method: string) => {
+    setConfidenceMethod(method);
+    try {
+      await api.updateExperiment(experiment.id, {
+        assistance_method: 'human_as_a_tool',
+        assistance_params: { confidence_method: method },
+      });
+      setSuccess('Confidence method updated');
+      setTimeout(() => setSuccess(null), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update confidence method');
+    }
   };
 
   const loadStats = useCallback(async () => {
@@ -933,6 +967,59 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
               <h2 style={styles.sectionTitle}>Rater Assistance Methods</h2>
             </div>
             <div style={styles.sectionBody}>
+              {/* Human-as-a-Tool Toggle */}
+              <div style={styles.toggleRow}>
+                <div style={styles.toggleInfo}>
+                  <div style={styles.toggleLabel}>Human-as-a-Tool</div>
+                  <div style={styles.toggleDescription}>
+                    AI decomposes each question into subtasks. Raters answer each subtask, then the AI synthesises a final recommendation.
+                  </div>
+                </div>
+                <div style={styles.toggle}>
+                  <div
+                    style={{
+                      ...styles.toggleTrack,
+                      background: humanAsATool ? '#4a90d9' : '#ddd',
+                    }}
+                    onClick={handleHumanAsAToolToggle}
+                  />
+                  <div
+                    style={{
+                      ...styles.toggleThumb,
+                      left: humanAsATool ? '22px' : '2px',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Confidence method sub-selector (shown when Human-as-a-Tool is on) */}
+              {humanAsATool && (
+                <div style={{ padding: '12px 0 16px 0', borderBottom: '1px solid #f0f0f0', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 500, color: '#555', display: 'block', marginBottom: '8px' }}>
+                    Confidence method
+                  </label>
+                  <select
+                    value={confidenceMethod}
+                    onChange={e => handleConfidenceMethodChange(e.target.value)}
+                    style={{
+                      padding: '8px 12px',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      color: '#333',
+                      background: '#fff',
+                      cursor: 'pointer',
+                      width: '100%',
+                      maxWidth: '320px',
+                    }}
+                  >
+                    <option value="self_report">Self-report — single call, fastest</option>
+                    <option value="sampling">Sampling — K samples + clustering, most accurate</option>
+                    <option value="self_consistency">Self-consistency — K samples, majority vote</option>
+                  </select>
+                </div>
+              )}
+
               {/* Search Results Toggle */}
               <div style={styles.toggleRow}>
                 <div style={styles.toggleInfo}>

@@ -46,6 +46,7 @@ class StepType(str, Enum):
     DISPLAY = "display"  # show static content to the rater (terminal)
     ASK_INPUT = "ask_input"  # ask the rater a sub-question, then call advance()
     COMPLETE = "complete"  # multi-turn interaction finished, show final result (terminal)
+    SKIP = "skip"  # unrecoverable error mid-session; question skipped for retry later (terminal)
 
 
 class Experiment(SQLModel, table=True):

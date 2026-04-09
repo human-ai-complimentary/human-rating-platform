@@ -6,6 +6,8 @@ export interface Experiment {
   prolific_completion_url: string | null;
   question_count: number;
   rating_count: number;
+  assistance_method: string;
+  assistance_params: Record<string, unknown> | null;
 }
 
 export interface Question {
@@ -39,6 +41,7 @@ export interface Session {
   experiment_name: string;
   completion_url: string | null;
   rater_session_token: string;
+  assistance_method: string;
 }
 
 export interface RatingSubmit {
@@ -46,6 +49,36 @@ export interface RatingSubmit {
   answer: string;
   confidence: number;
   time_started: string;
+  assistance_session_id?: number;
+}
+
+// ── Assistance ────────────────────────────────────────────────────────────────
+
+export type SubtaskType = 'binary' | 'multiple_choice' | 'free_text' | 'rating_scale';
+
+export interface Subtask {
+  index: number;
+  question: string;
+  my_answer?: string;
+  confidence?: number;
+  type: SubtaskType;
+  options: string[] | null;
+}
+
+export type AssistanceStepType = 'none' | 'display' | 'ask_input' | 'complete' | 'skip';
+
+export interface AssistanceStep {
+  session_id: number;
+  type: AssistanceStepType;
+  is_terminal: boolean;
+  payload: {
+    subtasks?: Subtask[];
+    iteration?: number;
+    max_rounds?: number;
+    confidence_threshold?: number;
+    history?: Array<{ subtasks: Subtask[]; answers: Record<string, { answer: string; confidence?: number }> }>;
+    synthesis?: { answer: string; reasoning: string } | null;
+  };
 }
 
 export interface Analytics {

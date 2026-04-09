@@ -4,9 +4,12 @@ import type { Question } from '../types';
 interface QuestionCardProps {
   question: Question;
   onSubmit: (answer: string, confidence: number, timeStarted: string) => Promise<void>;
+  disabled?: boolean;
+  assistanceAnswer?: string | null;
+  assistanceActive?: boolean;
 }
 
-function QuestionCard({ question, onSubmit }: QuestionCardProps) {
+function QuestionCard({ question, onSubmit, disabled = false, assistanceAnswer = null, assistanceActive = false }: QuestionCardProps) {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [freeTextAnswer, setFreeTextAnswer] = useState('');
   const [confidence, setConfidence] = useState(3);
@@ -20,6 +23,16 @@ function QuestionCard({ question, onSubmit }: QuestionCardProps) {
     setSubmitting(false);
     timeStartedRef.current = new Date().toISOString();
   }, [question.id]);
+
+  // Prefill with AI's suggested answer when assistance completes
+  useEffect(() => {
+    if (!assistanceAnswer) return;
+    if (question.question_type === 'FT') {
+      setFreeTextAnswer(assistanceAnswer);
+    } else {
+      setSelectedAnswer(assistanceAnswer);
+    }
+  }, [assistanceAnswer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async () => {
     const answer = question.question_type === 'FT' ? freeTextAnswer : selectedAnswer;
@@ -37,12 +50,14 @@ function QuestionCard({ question, onSubmit }: QuestionCardProps) {
     }
   };
 
+  // Options may use '|' as delimiter (new format, supports options containing commas)
+  // or ',' (legacy format). Detect by presence of '|'.
   const options = question.options
-    ? question.options.split(',').map(o => o.trim()).filter(o => o)
+    ? question.options.split(question.options.includes('|') ? '|' : ',').map(o => o.trim()).filter(o => o)
     : [];
 
   const isMC = question.question_type === 'MC' && options.length > 0;
-  const canSubmit = isMC ? !!selectedAnswer : !!freeTextAnswer.trim();
+  const canSubmit = !disabled && (isMC ? !!selectedAnswer : !!freeTextAnswer.trim());
 
   const styles = {
     card: {
@@ -157,7 +172,13 @@ function QuestionCard({ question, onSubmit }: QuestionCardProps) {
 
       <p style={styles.questionText}>{question.question_text}</p>
 
-      {isMC ? (
+      {assistanceActive && assistanceAnswer == null && (
+        <p style={{ fontSize: '14px', color: '#888', fontStyle: 'italic', marginBottom: '16px' }}>
+          Answer the questions on the right to help inform your response.
+        </p>
+      )}
+
+      {!assistanceActive && (isMC ? (
         <div style={styles.optionsGrid}>
           {options.map((option, index) => (
             <button
@@ -190,34 +211,38 @@ function QuestionCard({ question, onSubmit }: QuestionCardProps) {
           rows={4}
           style={styles.textarea}
         />
+      ))}
+
+      {!assistanceActive && (
+        <div style={styles.confidenceSection}>
+          <div style={styles.confidenceLabel}>
+            <span style={styles.confidenceTitle}>How confident are you?</span>
+            <span style={styles.confidenceValue}>{confidence}/5</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="5"
+            value={confidence}
+            onChange={(e) => setConfidence(parseInt(e.target.value))}
+            style={styles.slider}
+          />
+          <div style={styles.sliderLabels}>
+            <span>Not confident</span>
+            <span>Very confident</span>
+          </div>
+        </div>
       )}
 
-      <div style={styles.confidenceSection}>
-        <div style={styles.confidenceLabel}>
-          <span style={styles.confidenceTitle}>How confident are you?</span>
-          <span style={styles.confidenceValue}>{confidence}/5</span>
-        </div>
-        <input
-          type="range"
-          min="1"
-          max="5"
-          value={confidence}
-          onChange={(e) => setConfidence(parseInt(e.target.value))}
-          style={styles.slider}
-        />
-        <div style={styles.sliderLabels}>
-          <span>Not confident</span>
-          <span>Very confident</span>
-        </div>
-      </div>
-
-      <button
-        onClick={handleSubmit}
-        disabled={submitting || !canSubmit}
-        style={styles.submitButton}
-      >
-        {submitting ? 'Submitting...' : 'Submit Answer'}
-      </button>
+      {(!assistanceActive) && (
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || !canSubmit}
+          style={styles.submitButton}
+        >
+          {submitting ? 'Submitting...' : 'Submit Answer'}
+        </button>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@
 
 import type {
   Analytics,
+  AssistanceStep,
   ExperimentRound,
   Experiment,
   ExperimentCreate,
@@ -36,7 +37,7 @@ type SessionStatusResponse = {
 
 type QueryValue = string | number | boolean | null | undefined;
 type QueryParams = Record<string, QueryValue>;
-type HttpMethod = 'GET' | 'POST' | 'DELETE';
+type HttpMethod = 'GET' | 'POST' | 'DELETE' | 'PATCH';
 
 type RequestOptions = {
   method?: HttpMethod;
@@ -81,6 +82,8 @@ const routes = {
     submit: '/raters/submit',
     sessionStatus: '/raters/session-status',
     endSession: '/raters/end-session',
+    assistanceStart: '/raters/assistance/start',
+    assistanceAdvance: '/raters/assistance/advance',
   },
 } as const;
 
@@ -306,6 +309,13 @@ export const api = {
     return requestJson<Upload[]>(routes.admin.uploads(experimentId));
   },
 
+  async updateExperiment(experimentId: number, data: { assistance_method: string; assistance_params?: Record<string, unknown> }): Promise<Experiment> {
+    return requestJson<Experiment>(routes.admin.experiment(experimentId), {
+      method: 'PATCH',
+      json: data,
+    });
+  },
+
   async deleteExperiment(experimentId: number): Promise<MessageResponse> {
     return requestJson<MessageResponse>(routes.admin.experiment(experimentId), {
       method: 'DELETE',
@@ -424,6 +434,26 @@ export const api = {
     return requestJson<MessageResponse>(routes.rater.endSession, {
       method: 'POST',
       headers: { 'X-Rater-Session': sessionToken },
+    });
+  },
+
+  async startAssistance(sessionToken: string, questionId: number): Promise<AssistanceStep> {
+    return requestJson<AssistanceStep>(routes.rater.assistanceStart, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { question_id: questionId },
+    });
+  },
+
+  async advanceAssistance(
+    sessionToken: string,
+    sessionId: number,
+    answers: Record<number, { answer: string; confidence: number }>
+  ): Promise<AssistanceStep> {
+    return requestJson<AssistanceStep>(routes.rater.assistanceAdvance, {
+      method: 'POST',
+      headers: { 'X-Rater-Session': sessionToken },
+      json: { session_id: sessionId, human_input: JSON.stringify(answers) },
     });
   },
 };

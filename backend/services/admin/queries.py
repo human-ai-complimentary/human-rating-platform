@@ -34,3 +34,17 @@ async def fetch_total_questions_for_experiment(
         )
     ).scalar_one()
     return int(total_questions or 0)
+
+
+async def fetch_total_ratings_for_experiment(
+    experiment_id: int,
+    db: AsyncSession,
+) -> int:
+    total_ratings = (
+        await db.execute(
+            select(func.count(Rating.id))
+            .join(Question, Rating.question_id == Question.id)
+            .where(Question.experiment_id == experiment_id)
+        )
+    ).scalar_one()
+    return int(total_ratings or 0)

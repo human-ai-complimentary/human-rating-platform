@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Timer from './Timer';
 import QuestionCard from './QuestionCard';
-import type { Session, Question } from '../types';
+import AssistancePanel from './AssistancePanel';
+import type { Session, Question, AssistanceStep } from '../types';
 
 const STORAGE_KEY = 'hrp_rater_session';
 
@@ -104,6 +105,8 @@ function RaterView() {
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [allDone, setAllDone] = useState(false);
+  const [assistanceSessionId, setAssistanceSessionId] = useState<number | null>(null);
+  const [assistanceStep, setAssistanceStep] = useState<AssistanceStep | null>(null);
 
   const experimentId = searchParams.get('experiment_id');
   const prolificId = searchParams.get('PROLIFIC_PID');
@@ -136,6 +139,8 @@ function RaterView() {
 
   const fetchNextQuestion = useCallback(async (token: string) => {
     try {
+      setAssistanceSessionId(null);
+      setAssistanceStep(null);
       const q = await api.getNextQuestion(token);
       if (q === null || (typeof q === 'object' && Object.keys(q).length === 0)) {
         setAllDone(true);
@@ -143,6 +148,13 @@ function RaterView() {
       } else {
         setAllDone(false);
         setQuestion(q);
+        try {
+          const stored = sessionStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...parsed, question: q }));
+          }
+        } catch { /* ignore */ }
       }
     } catch (err) {
       if (err instanceof Error && err.message === 'Session expired') {
@@ -261,6 +273,7 @@ function RaterView() {
         answer,
         confidence,
         time_started: timeStarted,
+        ...(assistanceSessionId !== null ? { assistance_session_id: assistanceSessionId } : {}),
       });
       setQuestionsCompleted(prev => prev + 1);
       await loadNextQuestion(sessionToken);
@@ -273,13 +286,23 @@ function RaterView() {
     }
   };
 
-  const handleSessionExpired = () => {
+const handleSessionExpired = () => {
     setSessionExpired(true);
   };
 
+  // Auto-skip question when decomposition fails mid-session — question stays unrated and may reappear
+  useEffect(() => {
+    if (assistanceStep?.type === 'skip' && sessionToken) {
+      void loadNextQuestion(sessionToken);
+    }
+  }, [assistanceStep?.type, sessionToken, loadNextQuestion]);
+
+  const hasAssistance = session?.assistance_method && session.assistance_method !== 'none';
+  // Collapse to single column when assistance returned 'none' (LLM decided no help needed)
+
   const styles = {
     container: {
-      maxWidth: '700px',
+      maxWidth: hasAssistance ? '1200px' : '700px',
       margin: '0 auto',
       padding: '24px',
       minHeight: '100vh',
@@ -454,11 +477,32 @@ function RaterView() {
         </div>
       </div>
 
-      {question && (
-        <QuestionCard
-          question={question}
-          onSubmit={handleSubmit}
-        />
+      {hasAssistance && question && sessionToken ? (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', alignItems: 'start' }}>
+          <div>
+            <QuestionCard
+              question={question}
+              onSubmit={handleSubmit}
+              assistanceActive={assistanceStep?.type !== 'complete' && assistanceStep?.type !== 'none'}
+              assistanceAnswer={assistanceStep?.payload.synthesis?.answer ?? null}
+            />
+          </div>
+          <AssistancePanel
+            sessionToken={sessionToken}
+            questionId={question.id}
+            onSessionId={setAssistanceSessionId}
+            onStepChange={setAssistanceStep}
+          />
+        </div>
+      ) : (
+        <>
+          {question && (
+            <QuestionCard
+              question={question}
+              onSubmit={handleSubmit}
+            />
+          )}
+        </>
       )}
     </div>
   );

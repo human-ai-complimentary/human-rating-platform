@@ -80,6 +80,11 @@ class ExperimentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ExperimentUpdate(BaseModel):
+    assistance_method: str
+    assistance_params: Optional[dict] = None
+
+
 # Question schemas
 class QuestionResponse(BaseModel):
     id: int
@@ -99,6 +104,7 @@ class RaterStartResponse(BaseModel):
     experiment_name: str
     completion_url: Optional[str] = None
     rater_session_token: str
+    assistance_method: str = "none"
 
 
 class SessionStatusResponse(BaseModel):
