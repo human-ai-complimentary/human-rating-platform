@@ -29,10 +29,7 @@ async def log_requests(
 
     if request.url.path.startswith(("/api/",)):
         logger.info(
-            "%s %s %s",
-            request.method,
-            request.url.path,
-            response.status_code,
+            "HTTP request",
             extra={
                 "attributes": {
                     "http.method": request.method,
