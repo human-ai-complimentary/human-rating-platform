@@ -139,6 +139,7 @@ async def start_session(
             "attributes": {
                 "rater_id": rater.id,
                 "experiment_id": experiment_id,
+                "prolific_pid": prolific_pid,
                 "is_preview": is_preview,
             }
         },
