@@ -16,6 +16,7 @@ Usage:
 Log level is controlled by APP__LOG_LEVEL env var (or [app] log_level in
 config.toml).  Accepted values: DEBUG, INFO, WARNING, ERROR.
 """
+
 from __future__ import annotations
 
 import json

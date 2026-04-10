@@ -3,6 +3,7 @@
 These are pure-stdlib tests — no database, no FastAPI, no fixtures from
 conftest.py.  They run locally without Docker.
 """
+
 from __future__ import annotations
 
 import io
