@@ -182,6 +182,7 @@ async def advance_assistance(
     except RuntimeError:
         logger.error(
             "Assistance advance failed with unrecoverable error; skipping question for retry",
+            exc_info=True,
             extra={
                 "attributes": {
                     "session_id": session_id,
