@@ -3,7 +3,6 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from config import ProlificMode
 from models import ProlificStudyStatus, StepType
 
 
@@ -54,7 +53,6 @@ class ExperimentRoundResponse(BaseModel):
 
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
-    prolific_mode: ProlificMode
 
 
 # Experiment schemas

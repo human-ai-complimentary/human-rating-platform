@@ -75,10 +75,7 @@ async def admin_logout(manager=Depends(get_admin_manager)):
 @router.get("/platform-status", response_model=PlatformStatus)
 async def get_platform_status():
     settings = get_settings()
-    return PlatformStatus(
-        prolific_enabled=settings.prolific.enabled,
-        prolific_mode=settings.prolific.mode,
-    )
+    return PlatformStatus(prolific_enabled=settings.prolific.enabled)
 
 
 @secure_router.post("/experiments", response_model=ExperimentResponse)

@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import ProlificMode, get_settings
+from config import get_settings
 from models import ExperimentRound
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -520,12 +520,9 @@ PROLIFIC_STUDY_ID = "65abc123def456"
 def enable_prolific():
     """Temporarily enable Prolific by setting an API token on the cached settings."""
     settings = get_settings()
-    original_mode = settings.prolific.mode
     original = settings.prolific.api_token
-    settings.prolific.mode = ProlificMode.REAL
     settings.prolific.api_token = "test-token"
     yield settings
-    settings.prolific.mode = original_mode
     settings.prolific.api_token = original
 
 
@@ -1146,20 +1143,15 @@ def test_platform_status_reflects_prolific_enabled(client: TestClient, enable_pr
     resp = client.get("/api/admin/platform-status")
     assert resp.status_code == 200
     assert resp.json()["prolific_enabled"] is True
-    assert resp.json()["prolific_mode"] == "real"
 
 
 def test_platform_status_disabled_by_default(client: TestClient):
     settings = get_settings()
-    original_mode = settings.prolific.mode
     original = settings.prolific.api_token
-    settings.prolific.mode = ProlificMode.DISABLED
     settings.prolific.api_token = ""
     try:
         resp = client.get("/api/admin/platform-status")
         assert resp.status_code == 200
         assert resp.json()["prolific_enabled"] is False
-        assert resp.json()["prolific_mode"] == "disabled"
     finally:
-        settings.prolific.mode = original_mode
         settings.prolific.api_token = original

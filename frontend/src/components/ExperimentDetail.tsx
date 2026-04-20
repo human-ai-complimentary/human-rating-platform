@@ -34,7 +34,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [includePreview, setIncludePreview] = useState(false);
   const [publishingRoundId, setPublishingRoundId] = useState<number | null>(null);
   const [closingRoundId, setClosingRoundId] = useState<number | null>(null);
-  const [prolificMode, setProlificMode] = useState<'loading' | 'disabled' | 'real'>('loading');
+  const [prolificEnabled, setProlificEnabled] = useState<'loading' | boolean>('loading');
   const [platformStatusMessage, setPlatformStatusMessage] = useState<string | null>(null);
   const [rounds, setRounds] = useState<ExperimentRound[]>([]);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
@@ -144,21 +144,21 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     loadUploads();
     api.getPlatformStatus()
       .then((s) => {
-        setProlificMode(s.prolific_mode);
+        setProlificEnabled(s.prolific_enabled);
         setPlatformStatusMessage(null);
       })
       .catch(() => {
-        setProlificMode('disabled');
+        setProlificEnabled(false);
         setPlatformStatusMessage('Unable to load platform status. Assuming Prolific is disabled.');
       });
   }, [loadStats, loadUploads]);
 
   useEffect(() => {
-    if (prolificMode === 'real') {
+    if (prolificEnabled === true) {
       loadRounds();
       loadRecommendation();
     }
-  }, [prolificMode, loadRounds, loadRecommendation]);
+  }, [prolificEnabled, loadRounds, loadRecommendation]);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -541,14 +541,14 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     },
   };
 
-  const prolificModeMeta = prolificMode === 'real'
+  const prolificStatusMeta = prolificEnabled === true
     ? {
-        badgeLabel: 'Real Mode',
+        badgeLabel: 'Enabled',
         badgeStyle: { background: '#e8f6ed', color: '#166534' },
         bannerStyle: { ...styles.infoBanner, background: '#eefbf3', border: '1px solid #72c08f', color: '#166534' },
-        message: 'Real Prolific mode is enabled. Each launch creates an unpublished Prolific draft: start with the pilot, then close each round before creating the next one.',
+        message: 'Prolific is enabled. Each launch creates an unpublished Prolific draft: start with the pilot, then close each round before creating the next one.',
       }
-    : prolificMode === 'loading'
+    : prolificEnabled === 'loading'
       ? {
           badgeLabel: 'Checking...',
           badgeStyle: { background: '#f1f3f5', color: '#495057' },
@@ -559,7 +559,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
           badgeLabel: 'Disabled',
           badgeStyle: { background: '#f8f0f0', color: '#9f1239' },
           bannerStyle: { ...styles.infoBanner, background: '#fff5f5', border: '1px solid #f1b8be', color: '#9f1239' },
-          message: 'Prolific is disabled for this environment. Set `PROLIFIC__MODE=real` and configure a Prolific API token to enable paid rounds.',
+          message: 'Prolific is disabled for this environment. Configure a Prolific API token to enable paid rounds.',
         };
 
   return (
@@ -653,17 +653,17 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
               <h2 style={styles.sectionTitle}>Prolific Workflow</h2>
               <span
                 data-testid="prolific-mode-badge"
-                style={{ ...styles.statusBadge, ...prolificModeMeta.badgeStyle }}
+                style={{ ...styles.statusBadge, ...prolificStatusMeta.badgeStyle }}
               >
-                {prolificModeMeta.badgeLabel}
+                {prolificStatusMeta.badgeLabel}
               </span>
             </div>
             <div style={styles.sectionBody}>
               <div
                 data-testid="prolific-mode-notice"
-                style={prolificModeMeta.bannerStyle}
+                style={prolificStatusMeta.bannerStyle}
               >
-                {prolificModeMeta.message}
+                {prolificStatusMeta.message}
                 {platformStatusMessage && (
                   <div style={{ marginTop: '8px' }}>
                     {platformStatusMessage}
@@ -686,7 +686,7 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                 </button>
               </div>
 
-              {prolificMode === 'real' && (
+              {prolificEnabled === true && (
                 <>
                   {/* Existing rounds list */}
                   {rounds.length > 0 && (

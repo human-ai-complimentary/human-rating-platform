@@ -13,7 +13,7 @@ import string
 
 import httpx
 
-from config import ProlificMode, ProlificSettings
+from config import ProlificSettings
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,8 @@ async def create_study(
     completion_code: str,
     device_compatibility: list[str] | None = None,
 ) -> dict[str, str]:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("create_study called while Prolific mode is disabled")
+    if not settings.enabled:
+        raise RuntimeError("create_study called while Prolific is disabled")
 
     payload: dict = {
         "name": name,
@@ -112,8 +112,8 @@ async def publish_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> dict[str, str]:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("publish_study called while Prolific mode is disabled")
+    if not settings.enabled:
+        raise RuntimeError("publish_study called while Prolific is disabled")
 
     return await _transition_real_study(
         settings=settings,
@@ -127,8 +127,8 @@ async def stop_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> dict[str, str]:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("stop_study called while Prolific mode is disabled")
+    if not settings.enabled:
+        raise RuntimeError("stop_study called while Prolific is disabled")
 
     return await _transition_real_study(
         settings=settings,
@@ -142,8 +142,8 @@ async def delete_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> None:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("delete_study called while Prolific mode is disabled")
+    if not settings.enabled:
+        raise RuntimeError("delete_study called while Prolific is disabled")
 
     async with _build_client(settings) as client:
         response = await client.delete(f"/studies/{study_id}/")
@@ -161,8 +161,8 @@ async def get_study(
     settings: ProlificSettings,
     study_id: str,
 ) -> dict[str, str]:
-    if settings.mode != ProlificMode.REAL:
-        raise RuntimeError("get_study called while Prolific mode is disabled")
+    if not settings.enabled:
+        raise RuntimeError("get_study called while Prolific is disabled")
 
     async with _build_client(settings) as client:
         response = await client.get(f"/studies/{study_id}/")
