@@ -54,11 +54,3 @@ def test_cors_origins_rejects_invalid_json_env(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(ValidationError, match="APP__CORS_ORIGINS must be a JSON array of strings"):
         Settings(_env_file=None)
-
-
-def test_prolific_mode_rejects_fake(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("APP_SECRET_KEY", "test-secret")
-    monkeypatch.setenv("PROLIFIC__MODE", "fake")
-
-    with pytest.raises(ValidationError, match="Input should be 'disabled' or 'real'"):
-        Settings(_env_file=None)

@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
         extra={
             "attributes": {
                 "log_level": settings.app.log_level,
-                "prolific_mode": settings.prolific.mode.value,
+                "prolific_enabled": settings.prolific.enabled,
             }
         },
     )
