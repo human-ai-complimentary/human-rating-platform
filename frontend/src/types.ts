@@ -125,7 +125,6 @@ export interface ProlificStudyConfig {
 
 export interface PlatformStatus {
   prolific_enabled: boolean;
-  prolific_mode: 'disabled' | 'real';
 }
 
 export interface ExperimentCreate {

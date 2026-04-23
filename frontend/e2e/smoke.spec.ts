@@ -134,9 +134,9 @@ async function fulfillJson(route: Route, status: number, body: unknown) {
 async function installApiMocks(
   page: Page,
   state: MockState,
-  options: { prolificMode?: 'disabled' | 'real' } = {}
+  options: { prolificEnabled?: boolean } = {}
 ) {
-  const prolificMode = options.prolificMode ?? 'real';
+  const prolificEnabled = options.prolificEnabled ?? true;
 
   await page.context().route('**/api/**', async (route) => {
     const request = route.request();
@@ -156,8 +156,7 @@ async function installApiMocks(
 
     if (pathname === '/api/admin/platform-status') {
       await fulfillJson(route, 200, {
-        prolific_enabled: prolificMode === 'real',
-        prolific_mode: prolificMode,
+        prolific_enabled: prolificEnabled,
       });
       return;
     }
@@ -615,12 +614,12 @@ test('disabled mode explains why pilot controls are unavailable', async ({ page 
     is_complete: false,
   };
 
-  await installApiMocks(page, state, { prolificMode: 'disabled' });
+  await installApiMocks(page, state, { prolificEnabled: false });
   await page.goto('/admin/experiments/1');
 
   await expect(page.getByTestId('prolific-mode-badge')).toHaveText('Disabled');
   await expect(page.getByTestId('prolific-mode-notice')).toContainText('Prolific is disabled for this environment');
-  await expect(page.getByTestId('prolific-mode-notice')).toContainText('PROLIFIC__MODE=real');
+  await expect(page.getByTestId('prolific-mode-notice')).toContainText('Configure a Prolific API token');
   await expect(page.getByTestId('preview-participant-button')).toBeVisible();
   await expect(page.getByTestId('run-pilot-button')).toHaveCount(0);
 });

@@ -260,7 +260,6 @@ Env keys use Pydantic's nested `__` delimiter for nested settings models:
 - `EXPORTS__STREAM_BATCH_SIZE` — CSV export chunking (memory/throughput tradeoff)
 - `TESTING__EXPORT_SEED_ROW_COUNT` — characterization test dataset volume
 - `SEEDING__*` — local seed generation (`enabled`, `experiment_name`, `question_count`, etc.)
-- `PROLIFIC__MODE` — `disabled` or `real`
 - `PROLIFIC__API_TOKEN` — Prolific API token (optional; enables automated study management)
 - `APP__SITE_URL` — public frontend URL used to build Prolific study links (default: `http://localhost:5173`)
 
@@ -377,8 +376,7 @@ Set in repo → **Settings** → **Secrets and variables** → **Actions**:
 - `DATABASE__URL` — Render Postgres internal connection string
 - `APP__CORS_ORIGINS` — JSON array including web origin, e.g. `["https://human-rating-platform-web.onrender.com"]`
 - `APP__SITE_URL` — public frontend URL, e.g. `https://human-rating-platform-web.onrender.com`
-- `PROLIFIC__MODE` — `disabled` or `real`
-- `PROLIFIC__API_TOKEN` — Prolific API token (required only when `PROLIFIC__MODE=real`)
+- `PROLIFIC__API_TOKEN` — Prolific API token (set to enable automated study management)
 
 **Web service** (set in Render Dashboard → Web service → Environment):
 - `VITE_API_HOST` — public API origin, e.g. `https://human-rating-platform-api-uxnt.onrender.com`
@@ -465,15 +463,7 @@ Create a class in `backend/services/assistance/methods/` that subclasses `Assist
 
 ## Prolific Integration
 
-The Prolific integration has two explicit modes controlled by `PROLIFIC__MODE`.
-
-### Disabled
-
-Set `PROLIFIC__MODE=disabled` to hide the Prolific round workflow entirely. This is useful when you want to use the platform without any Prolific-specific automation.
-
-### Real
-
-Set `PROLIFIC__MODE=real` and provide `PROLIFIC__API_TOKEN` to use the real Prolific API. In this mode, the platform creates, publishes, and deletes studies on Prolific. The backend will refuse to start if `PROLIFIC__API_TOKEN` is missing when `PROLIFIC__MODE=real`.
+Prolific integration is enabled automatically when `PROLIFIC__API_TOKEN` is set. When enabled, the platform creates, publishes, and deletes studies on Prolific. When the token is absent, the Prolific round workflow is hidden in the UI.
 
 Typical workflow:
 
