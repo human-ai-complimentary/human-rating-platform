@@ -234,6 +234,21 @@ async def get_workspace_balance(
         return response.json()
 
 
+async def update_study(
+    *,
+    settings: ProlificSettings,
+    study_id: str,
+    fields: dict,
+) -> dict:
+    if not settings.enabled:
+        raise RuntimeError("update_study called while Prolific is disabled")
+
+    async with _build_client(settings) as client:
+        response = await client.patch(f"/studies/{study_id}/", json=fields)
+        _raise_for_status(response)
+        return response.json()
+
+
 # Workspace currency lookup is cached for the process lifetime once resolved
 # successfully. Currency for a project's workspace is effectively immutable;
 # changing PROLIFIC__WORKSPACE_ID requires a deploy/restart anyway, so a

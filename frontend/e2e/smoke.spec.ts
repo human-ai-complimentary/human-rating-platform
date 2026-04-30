@@ -24,6 +24,10 @@ type ExperimentRoundRecord = {
   prolific_study_id: string;
   prolific_study_status: 'UNPUBLISHED' | 'ACTIVE' | 'AWAITING_REVIEW' | 'COMPLETED';
   places_requested: number;
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  device_compatibility: string[];
   created_at: string;
   prolific_study_url: string;
 };
@@ -117,6 +121,10 @@ function buildRound(state: MockState, round: Partial<ExperimentRoundRecord>): Ex
     prolific_study_id: `study-${state.nextRoundId}`,
     prolific_study_status: 'UNPUBLISHED',
     places_requested: 0,
+    description: 'Mock study description',
+    estimated_completion_time: 60,
+    reward: 900,
+    device_compatibility: ['desktop'],
     created_at: '2026-03-09T00:00:00Z',
     prolific_study_url: 'https://app.prolific.com/researcher/workspaces/studies/mock-study',
     ...round,

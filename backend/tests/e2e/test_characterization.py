@@ -616,6 +616,17 @@ def _mock_workspace_balance(
     )
 
 
+def _mock_update_study(
+    *,
+    study_id: str = PROLIFIC_STUDY_ID,
+    status: int = 200,
+) -> respx.Route:
+    body = {"id": study_id, "status": "UNPUBLISHED"} if status == 200 else {"error": "fail"}
+    return respx.patch(f"{PROLIFIC_BASE}/studies/{study_id}/").mock(
+        return_value=Response(status, json=body)
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_prolific_currency_cache():
     # Module-level cache in services.admin.prolific persists across tests in
@@ -1143,6 +1154,90 @@ def test_prolific_round_publish_updates_status(client: TestClient, enable_prolif
     assert route.called
     rounds = client.get(f"/api/admin/experiments/{experiment_id}/prolific/rounds").json()
     assert rounds[0]["prolific_study_status"] == "ACTIVE"
+
+
+@respx.mock
+def test_prolific_round_edit_updates_db_and_calls_prolific(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    route = _mock_update_study()
+    resp = client.patch(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1",
+        json={"description": "Updated description", "reward": 1500, "places": 7},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["description"] == "Updated description"
+    assert body["reward"] == 1500
+    assert body["places_requested"] == 7
+    assert route.called
+
+    sent = json.loads(route.calls[0].request.content)
+    assert sent == {
+        "description": "Updated description",
+        "reward": 1500,
+        "total_available_places": 7,
+    }
+
+
+@respx.mock
+def test_prolific_round_edit_rejects_when_published(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_publish_study()
+    publish_resp = client.post(f"/api/admin/experiments/{experiment_id}/prolific/rounds/1/publish")
+    assert publish_resp.status_code == 200
+
+    resp = client.patch(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1",
+        json={"description": "Cannot edit"},
+    )
+
+    assert resp.status_code == 400
+    assert "unpublished" in resp.json()["detail"].lower()
+
+
+@respx.mock
+def test_prolific_round_edit_rejects_empty_payload(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    resp = client.patch(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1",
+        json={},
+    )
+
+    assert resp.status_code == 400
+
+
+@respx.mock
+def test_prolific_round_edit_returns_404_for_missing_round(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    resp = client.patch(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/9999",
+        json={"description": "x"},
+    )
+
+    assert resp.status_code == 404
+
+
+@respx.mock
+def test_prolific_round_edit_returns_502_when_prolific_fails(client: TestClient, enable_prolific):
+    experiment, _pilot = _create_prolific_experiment(client)
+    experiment_id = experiment["id"]
+
+    _mock_update_study(status=500)
+    resp = client.patch(
+        f"/api/admin/experiments/{experiment_id}/prolific/rounds/1",
+        json={"description": "x"},
+    )
+
+    assert resp.status_code == 502
 
 
 @respx.mock

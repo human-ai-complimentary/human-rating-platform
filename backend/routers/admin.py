@@ -9,6 +9,7 @@ from database import get_session
 from schemas import (
     ExperimentRoundCreate,
     ExperimentRoundResponse,
+    ExperimentRoundUpdate,
     ExperimentCreate,
     ExperimentResponse,
     ExperimentUpdate,
@@ -239,6 +240,24 @@ async def list_experiment_rounds(
     db: AsyncSession = Depends(get_session),
 ):
     return await admin_service.list_experiment_rounds(experiment_id=experiment_id, db=db)
+
+
+@secure_router.patch(
+    "/experiments/{experiment_id}/prolific/rounds/{round_id}",
+    response_model=ExperimentRoundResponse,
+)
+async def update_experiment_round(
+    experiment_id: int,
+    round_id: int,
+    payload: ExperimentRoundUpdate,
+    db: AsyncSession = Depends(get_session),
+):
+    return await admin_service.update_experiment_round(
+        experiment_id=experiment_id,
+        round_id=round_id,
+        payload=payload,
+        db=db,
+    )
 
 
 @secure_router.post("/experiments/{experiment_id}/prolific/rounds/{round_id}/publish")
