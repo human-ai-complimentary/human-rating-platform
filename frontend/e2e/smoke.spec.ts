@@ -157,6 +157,8 @@ async function installApiMocks(
     if (pathname === '/api/admin/platform-status') {
       await fulfillJson(route, 200, {
         prolific_enabled: prolificEnabled,
+        currency_code: null,
+        currency_symbol: null,
       });
       return;
     }

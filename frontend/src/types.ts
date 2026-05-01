@@ -125,6 +125,8 @@ export interface ProlificStudyConfig {
 
 export interface PlatformStatus {
   prolific_enabled: boolean;
+  currency_code: string | null;
+  currency_symbol: string | null;
 }
 
 export interface ExperimentCreate {

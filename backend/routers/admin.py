@@ -17,6 +17,7 @@ from schemas import (
     RecommendationResponse,
 )
 from services import admin as admin_service
+from services.admin.prolific import get_cached_workspace_currency
 from auth import require_admin, get_admin_manager
 from services.authn import verify_clerk_token_and_get_email
 
@@ -75,7 +76,12 @@ async def admin_logout(manager=Depends(get_admin_manager)):
 @router.get("/platform-status", response_model=PlatformStatus)
 async def get_platform_status():
     settings = get_settings()
-    return PlatformStatus(prolific_enabled=settings.prolific.enabled)
+    code, symbol = await get_cached_workspace_currency(settings.prolific)
+    return PlatformStatus(
+        prolific_enabled=settings.prolific.enabled,
+        currency_code=code,
+        currency_symbol=symbol,
+    )
 
 
 @secure_router.post("/experiments", response_model=ExperimentResponse)
