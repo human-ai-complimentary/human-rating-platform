@@ -22,6 +22,7 @@ from schemas import (
 )
 
 from .prolific import (
+    ProlificAPIError,
     build_completion_url,
     build_external_study_url,
     build_study_url,
@@ -35,6 +36,46 @@ from .prolific import (
 from .queries import fetch_experiment_or_404, fetch_ratings_for_experiment
 
 logger = logging.getLogger(__name__)
+
+_PROLIFIC_BODY_TRUNCATE = 500
+
+
+def _prolific_error_detail(generic: str, exc: ProlificAPIError) -> str:
+    body = (exc.body or "").strip()
+    if not body:
+        return generic
+    parsed = _extract_prolific_message(body)
+    if parsed:
+        return f"{generic} Prolific said: {parsed}"
+    if len(body) > _PROLIFIC_BODY_TRUNCATE:
+        body = body[:_PROLIFIC_BODY_TRUNCATE] + "…"
+    return f"{generic} Prolific said: {body}"
+
+
+def _extract_prolific_message(body: str) -> str | None:
+    """Pull the most useful human-readable string from a Prolific error body.
+
+    Prolific's documented shape is ``{"error": {"detail": ..., "title": ...}}``,
+    but we also accept a top-level ``detail`` and fall back to ``None`` so the
+    caller can surface the raw body if the shape ever changes.
+    """
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    error = payload.get("error")
+    if isinstance(error, dict):
+        for key in ("detail", "title"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    value = payload.get("detail")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
 
 SESSION_DURATION_SECONDS = 3600  # 1 hour per Prolific place
 ROUND_BUFFER_FACTOR = 0.8
@@ -317,6 +358,21 @@ async def run_pilot_study(
         )
     except HTTPException:
         raise
+    except ProlificAPIError as exc:
+        logger.error(
+            "Failed to create pilot Prolific study",
+            extra={
+                "attributes": {
+                    "experiment_id": experiment_id,
+                    "prolific_status": exc.status_code,
+                    "prolific_body": exc.body,
+                }
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=_prolific_error_detail("Failed to create study on Prolific.", exc),
+        )
     except Exception:
         logger.error(
             "Failed to create pilot Prolific study",
@@ -400,6 +456,22 @@ async def run_experiment_round(
         )
     except HTTPException:
         raise
+    except ProlificAPIError as exc:
+        logger.error(
+            "Failed to create experiment round Prolific study",
+            extra={
+                "attributes": {
+                    "experiment_id": experiment_id,
+                    "round_number": next_round_number,
+                    "prolific_status": exc.status_code,
+                    "prolific_body": exc.body,
+                }
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=_prolific_error_detail("Failed to create round on Prolific.", exc),
+        )
     except Exception:
         logger.error(
             "Failed to create experiment round Prolific study",
@@ -471,6 +543,23 @@ async def publish_experiment_round(
             settings=settings.prolific,
             study_id=round_.prolific_study_id,
         )
+    except ProlificAPIError as exc:
+        logger.error(
+            "Failed to publish Prolific study",
+            extra={
+                "attributes": {
+                    "experiment_id": experiment_id,
+                    "round_id": round_id,
+                    "study_id": round_.prolific_study_id,
+                    "prolific_status": exc.status_code,
+                    "prolific_body": exc.body,
+                }
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=_prolific_error_detail("Failed to publish study on Prolific.", exc),
+        )
     except Exception:
         logger.error(
             "Failed to publish Prolific study",
@@ -524,6 +613,23 @@ async def close_experiment_round(
         result = await stop_study(
             settings=settings.prolific,
             study_id=round_.prolific_study_id,
+        )
+    except ProlificAPIError as exc:
+        logger.error(
+            "Failed to close Prolific study",
+            extra={
+                "attributes": {
+                    "experiment_id": experiment_id,
+                    "round_id": round_id,
+                    "study_id": round_.prolific_study_id,
+                    "prolific_status": exc.status_code,
+                    "prolific_body": exc.body,
+                }
+            },
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=_prolific_error_detail("Failed to close study on Prolific.", exc),
         )
     except Exception:
         logger.error(

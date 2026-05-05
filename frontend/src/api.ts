@@ -179,8 +179,28 @@ async function throwHttpError(response: Response, url: string): Promise<never> {
     throw new Error(buildRoutingHint(url));
   }
 
-  const message = body.trim() || `${response.status} ${response.statusText}`;
-  throw new Error(`Request failed (${response.status}) for ${url}: ${message}`);
+  const detail = extractDetail(body);
+  if (detail) {
+    throw new Error(detail);
+  }
+  const fallback = body.trim() || `${response.status} ${response.statusText}`;
+  throw new Error(`Request failed (${response.status}) for ${url}: ${fallback}`);
+}
+
+// FastAPI returns `{"detail": "..."}` for HTTPException; unwrap so users see
+// the message directly instead of escaped JSON.
+function extractDetail(body: string): string | null {
+  const trimmed = body.trim();
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed.detail === 'string' && parsed.detail.trim()) {
+      return parsed.detail.trim();
+    }
+  } catch {
+    // not JSON — fall through to raw body fallback in caller
+  }
+  return null;
 }
 
 async function parseJson<T>(response: Response, url: string): Promise<T> {

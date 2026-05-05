@@ -36,6 +36,8 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
   const [closingRoundId, setClosingRoundId] = useState<number | null>(null);
   const [prolificEnabled, setProlificEnabled] = useState<'loading' | boolean>('loading');
   const [platformStatusMessage, setPlatformStatusMessage] = useState<string | null>(null);
+  const [currencyCode, setCurrencyCode] = useState<string | null>(null);
+  const [currencySymbol, setCurrencySymbol] = useState<string | null>(null);
   const [rounds, setRounds] = useState<ExperimentRound[]>([]);
   const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
   const [pilotForm, setPilotForm] = useState<PilotStudyCreate>({
@@ -145,6 +147,8 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
     api.getPlatformStatus()
       .then((s) => {
         setProlificEnabled(s.prolific_enabled);
+        setCurrencyCode(s.currency_code);
+        setCurrencySymbol(s.currency_symbol);
         setPlatformStatusMessage(null);
       })
       .catch(() => {
@@ -833,7 +837,9 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                       />
                     </div>
                     <div style={styles.inputGroup}>
-                      <label htmlFor="pilot-reward" style={styles.label}>Reward (cents)</label>
+                      <label htmlFor="pilot-reward" style={styles.label}>
+                        Reward (minor units{currencyCode ? ` of ${currencyCode}` : ''})
+                      </label>
                       <input
                         id="pilot-reward"
                         data-testid="pilot-reward-input"
@@ -844,7 +850,11 @@ function ExperimentDetail({ experiment, onBack, onDeleted, onRefresh }: Experime
                         required
                         style={styles.input}
                       />
-                      <div style={styles.hint}>Payment in cents (e.g., 900 = $9.00)</div>
+                      <div style={styles.hint}>
+                        {currencyCode && currencySymbol
+                          ? `Smallest unit of ${currencyCode} (e.g., 900 = ${currencySymbol}9.00)`
+                          : 'Smallest unit of workspace currency (e.g., 900 = 9.00)'}
+                      </div>
                     </div>
                     <div style={styles.inputGroup}>
                       <label htmlFor="pilot-hours" style={styles.label}>Pilot Hours (# of raters)</label>

@@ -53,6 +53,8 @@ class ExperimentRoundResponse(BaseModel):
 
 class PlatformStatus(BaseModel):
     prolific_enabled: bool
+    currency_code: str | None = None
+    currency_symbol: str | None = None
 
 
 # Experiment schemas
