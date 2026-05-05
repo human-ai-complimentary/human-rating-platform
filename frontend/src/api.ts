@@ -8,6 +8,7 @@ import type {
   Analytics,
   AssistanceStep,
   ExperimentRound,
+  ExperimentRoundUpdate,
   Experiment,
   ExperimentCreate,
   ExperimentStats,
@@ -71,6 +72,8 @@ const routes = {
     prolificPilot: (id: number) => `/admin/experiments/${id}/prolific/pilot`,
     prolificRecommend: (id: number) => `/admin/experiments/${id}/prolific/recommend`,
     prolificRounds: (id: number) => `/admin/experiments/${id}/prolific/rounds`,
+    prolificRound: (experimentId: number, roundId: number) =>
+      `/admin/experiments/${experimentId}/prolific/rounds/${roundId}`,
     prolificRoundPublish: (experimentId: number, roundId: number) =>
       `/admin/experiments/${experimentId}/prolific/rounds/${roundId}/publish`,
     prolificRoundClose: (experimentId: number, roundId: number) =>
@@ -371,6 +374,17 @@ export const api = {
 
   async listExperimentRounds(experimentId: number): Promise<ExperimentRound[]> {
     return requestJson<ExperimentRound[]>(routes.admin.prolificRounds(experimentId));
+  },
+
+  async editExperimentRound(
+    experimentId: number,
+    roundId: number,
+    fields: ExperimentRoundUpdate,
+  ): Promise<ExperimentRound> {
+    return requestJson<ExperimentRound>(routes.admin.prolificRound(experimentId, roundId), {
+      method: 'PATCH',
+      json: fields,
+    });
   },
 
   async publishExperimentRound(experimentId: number, roundId: number): Promise<MessageResponse> {

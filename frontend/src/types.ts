@@ -142,8 +142,20 @@ export interface ExperimentRound {
   prolific_study_id: string;
   prolific_study_status: string;
   places_requested: number;
+  description: string;
+  estimated_completion_time: number;
+  reward: number;
+  device_compatibility: string[];
   created_at: string;
   prolific_study_url: string;
+}
+
+export interface ExperimentRoundUpdate {
+  description?: string;
+  estimated_completion_time?: number;
+  reward?: number;
+  places?: number;
+  device_compatibility?: string[];
 }
 
 export interface PilotStudyCreate {

@@ -31,6 +31,26 @@ class ExperimentRoundCreate(BaseModel):
     places: int = Field(ge=1)
 
 
+class ExperimentRoundUpdate(BaseModel):
+    description: Optional[str] = None
+    estimated_completion_time: Optional[int] = Field(default=None, ge=1)
+    reward: Optional[int] = Field(default=None, ge=1)
+    places: Optional[int] = Field(default=None, ge=1)
+    device_compatibility: Optional[list[Literal["desktop", "tablet", "mobile"]]] = None
+
+    def has_any(self) -> bool:
+        return any(
+            getattr(self, field) is not None
+            for field in (
+                "description",
+                "estimated_completion_time",
+                "reward",
+                "places",
+                "device_compatibility",
+            )
+        )
+
+
 class RecommendationResponse(BaseModel):
     avg_time_per_question_seconds: float
     remaining_rating_actions: int
@@ -45,6 +65,10 @@ class ExperimentRoundResponse(BaseModel):
     prolific_study_id: str
     prolific_study_status: ProlificStudyStatus
     places_requested: int
+    description: str
+    estimated_completion_time: int
+    reward: int
+    device_compatibility: list[str]
     created_at: datetime
     prolific_study_url: str
 
