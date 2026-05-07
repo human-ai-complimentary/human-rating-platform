@@ -131,4 +131,5 @@ Click a rater in the table → page showing every rating they submitted with que
 - **Q - Confidence scale:** 1–5 (current code) or 0–100 (prior data)? 
 - **Q - Free-text grading:** in-platform (LLM judge), or always export-and-grade-offline?
 - **Q - Where accuracy lives:** computed on demand in the analytics endpoint (proposed) or persisted on `Rating` at submit time?
+- **Q - Method-specific analytics ownership:** should reliance metrics (and any other method-specific analytics) be designed and built as part of this analytics project, or should each method's implementer decide what to record and surface?
 
