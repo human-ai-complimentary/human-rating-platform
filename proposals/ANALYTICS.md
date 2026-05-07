@@ -109,24 +109,7 @@ Question content can be drawn from a standard list of attention-check items (e.g
 - Analytics filter: "include flagged raters" toggle, parallel to existing `includePreview`
 - Export endpoint respects the same filter
 
-### 3) Reliance metrics
-
-Reliance metrics depend on the assistance method:
-
-### **HumanAsATool** (single suggestion):
-- **Take rate** — % of questions where the rater changed their answer to match the AI suggestion
-- **Override rate** — % of questions where the rater stuck with their original answer despite a divergent suggestion
-- **Outcome by reliance** — was reliance correlated with accuracy?
-
-### **Top-N** (N candidates, none privileged):
-- **Hit rate** — % of questions where the rater's final answer was one of the N candidates
-- **Selected rank distribution** — when the rater picks from the set, which position do they pick? (Catches anchoring on candidate 1.)
-- **Off-list rate** — % of questions where the rater's answer is none of the candidates
-- **Outcome by selection** — accuracy conditional on selected rank vs. off-list
-
-If metrics are computed on demand, requires persisting what was shown to the rater — probably `AssistanceSession.presented_candidates` plus `presented_order` if randomized. Independent of compute strategy, persisting candidates is also useful for retrospective analysis of N-sweep experiments.
-
-### 4) Per-rater drill-down
+### 3) Per-rater drill-down
 
 Click a rater in the table → page showing every rating they submitted with question text, answer, gt, correctness, confidence, response time, blur events, paste count. This is what we'd actually use to decide whether to manually flag someone.
 
