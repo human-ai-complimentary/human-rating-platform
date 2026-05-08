@@ -31,9 +31,20 @@ def upgrade() -> None:
         ["id"],
         ondelete="CASCADE",
     )
+    # Partial index over non-null values only: most rows are standalone
+    # questions (parent_question_id IS NULL) so there's no reason to carry
+    # them in the index. Speeds up parent_question_ids_subquery() and the
+    # FK-cascade lookup when a parent row is deleted.
+    op.create_index(
+        "ix_questions_parent_question_id",
+        "questions",
+        ["parent_question_id"],
+        postgresql_where=sa.text("parent_question_id IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_questions_parent_question_id", table_name="questions")
     op.drop_constraint(
         "fk_questions_parent_question_id",
         "questions",
