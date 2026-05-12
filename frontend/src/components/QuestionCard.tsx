@@ -254,7 +254,7 @@ function QuestionCard({ question, onSubmit, disabled = false, assistanceAnswer =
         <div style={styles.confidenceSection}>
           <div style={styles.confidenceLabel}>
             <span style={styles.confidenceTitle}>How confident are you?</span>
-            <span style={styles.confidenceValue}>{CONFIDENCE_LABELS[confidence - 1]}</span>
+            <span style={styles.confidenceValue}>{CONFIDENCE_LABELS[confidence - 1]} confident</span>
           </div>
           <input
             type="range"
