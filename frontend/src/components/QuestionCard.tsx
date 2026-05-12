@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import type { Question } from '../types';
 
 // 5-point unipolar Likert scale for self-reported confidence (index 0 -> value 1).
-const CONFIDENCE_LABELS = ['no confidence', 'little confidence', 'some confidence', 'confidence', 'high confidence'];
+const CONFIDENCE_LABELS = ['Not at all', 'Slightly', 'Moderately', 'Very', 'Completely'];
 
 interface QuestionCardProps {
   question: Question;
