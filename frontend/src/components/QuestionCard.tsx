@@ -172,15 +172,15 @@ function QuestionCard({ question, onSubmit, disabled = false, assistanceAnswer =
       cursor: 'pointer',
     },
     sliderLabels: {
-      display: 'flex',
-      justifyContent: 'space-between',
+      position: 'relative' as const,
+      height: '14px',
       marginTop: '8px',
       fontSize: '11px',
       color: '#888',
     },
     sliderLabel: {
-      flex: 1,
-      textAlign: 'center' as const,
+      position: 'absolute' as const,
+      whiteSpace: 'nowrap' as const,
     },
     submitButton: {
       width: '100%',
@@ -265,20 +265,25 @@ function QuestionCard({ question, onSubmit, disabled = false, assistanceAnswer =
             style={styles.slider}
           />
           <div style={styles.sliderLabels}>
-            {CONFIDENCE_LABELS.map((label, i) => (
-              <span
-                key={label}
-                style={{
-                  ...styles.sliderLabel,
-                  ...(i === 0 ? { textAlign: 'left' as const } : {}),
-                  ...(i === CONFIDENCE_LABELS.length - 1 ? { textAlign: 'right' as const } : {}),
-                  fontWeight: confidence === i + 1 ? 600 : 400,
-                  color: confidence === i + 1 ? '#4a90d9' : '#888',
-                }}
-              >
-                {label}
-              </span>
-            ))}
+            {CONFIDENCE_LABELS.map((label, i) => {
+              const pct = (i / (CONFIDENCE_LABELS.length - 1)) * 100;
+              const isFirst = i === 0;
+              const isLast = i === CONFIDENCE_LABELS.length - 1;
+              return (
+                <span
+                  key={label}
+                  style={{
+                    ...styles.sliderLabel,
+                    left: `${pct}%`,
+                    transform: isFirst ? 'none' : isLast ? 'translateX(-100%)' : 'translateX(-50%)',
+                    fontWeight: confidence === i + 1 ? 600 : 400,
+                    color: confidence === i + 1 ? '#4a90d9' : '#888',
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
